@@ -3,7 +3,7 @@
  *
  * Pulls current bid/ask, delta, and IV for every OPEN chain listed on the
  * "Market Data" tab (columns A-E there are auto-populated from Chain Summary).
- * Writes results into columns F (Bid), G (Ask), I (Delta), J (IV %), K (Last Updated).
+ * Writes results into columns G (Bid), H (Ask), J (Delta), K (IV %), L (Last Updated).
  *
  * SETUP
  * 1. In the spreadsheet: Extensions > Apps Script.
@@ -83,11 +83,11 @@ function runMarketDataUpdate() {
         sheet.getRange(row, 12).setValue("No match found");
         continue;
       }
-      sheet.getRange(row, 7).setValue(match.bid);                                 // F Bid
-      sheet.getRange(row, 8).setValue(match.ask);                                 // G Ask
-      sheet.getRange(row, 10).setValue(match.greeks ? match.greeks.delta : "");     // I Delta
-      sheet.getRange(row, 11).setValue(match.greeks ? match.greeks.mid_iv : "");   // J IV
-      sheet.getRange(row, 12).setValue(new Date());                               // K Last Updated
+      sheet.getRange(row, 7).setValue(match.bid);                                 // G Bid
+      sheet.getRange(row, 8).setValue(match.ask);                                 // H Ask
+      sheet.getRange(row, 10).setValue(match.greeks ? match.greeks.delta : "");     // J Delta
+      sheet.getRange(row, 11).setValue(match.greeks ? match.greeks.mid_iv : "");   // K IV
+      sheet.getRange(row, 12).setValue(new Date());                               // L Last Updated
     } catch (err) {
       sheet.getRange(row, 12).setValue("Error: " + err.message);
     }
