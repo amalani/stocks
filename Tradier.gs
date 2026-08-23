@@ -39,6 +39,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu("Tradier")
     .addItem("Refresh Market Data Now", "updateMarketDataForce")
+    .addItem("Update Strike Screener", "runStrikeScreener")
     .addToUi();
 }
 
@@ -101,6 +102,8 @@ function runMarketDataUpdate() {
       sheet.getRange(row, 12).setValue("Error: " + err.message);
     }
   }
+
+  updateDashboardRefreshTime();
 }
 
 function fetchOptionChain(symbol, expiration) {
@@ -120,6 +123,241 @@ function fetchOptionChain(symbol, expiration) {
   }
   // Tradier returns a single object (not an array) when there's only one contract
   return Array.isArray(json.options.option) ? json.options.option : [json.options.option];
+}
+
+// Mobile-friendly manual refresh: check a checkbox cell to trigger a refresh.
+// The Sheets mobile app can't run custom menu items or drawing-assigned
+// scripts, but editing a cell (including a checkbox) fires this trigger fine.
+// Must be added as an INSTALLABLE "On edit" trigger (Triggers > Add Trigger),
+// not left as a bare onEdit(e) — simple triggers can't call UrlFetchApp.
+const REFRESH_SHEET = "Dashboard"; // sheet with the checkbox — matches the renamed tab
+const REFRESH_CELL = "L1"; // cell holding the checkbox — adjust to match
+const REFRESH_DATE = "N1"; // cell showing when the last refresh finished
+
+function handleRefreshCheckbox(e) {
+  if (!e || !e.range) return;
+  if (e.range.getSheet().getName() !== REFRESH_SHEET) return;
+  if (e.range.getA1Notation() !== REFRESH_CELL) return;
+  if (e.value !== "TRUE") return; // only fire on check, not uncheck
+
+  updateMarketDataForce();
+  e.range.setValue(false); // reset so it can be tapped again next time
+}
+
+function updateDashboardRefreshTime() {
+  const sheet = SpreadsheetApp.getActive().getSheetByName(REFRESH_SHEET);
+  if (!sheet) throw new Error('Sheet "' + REFRESH_SHEET + '" not found');
+  sheet.getRange(REFRESH_DATE).setValue(new Date());
+}
+
+// Optional: force a refresh at ~6:31am (pre-market, before isMarketOpen() would
+// normally allow it) regardless of the regular timer. Apps Script triggers are
+// only accurate to about +/-15 minutes even with nearMinute() specified, so
+// treat this as "sometime around 6:31am," not exact. Run createMorningRefreshTrigger
+// once manually (Run menu) to install it; re-running it is safe, it de-dupes itself.
+function createMorningRefreshTrigger() {
+  deleteMorningRefreshTrigger();
+  ScriptApp.newTrigger("updateMarketDataForce")
+    .timeBased()
+    .atHour(6)
+    .nearMinute(31)
+    .everyDays(1)
+    .create();
+}
+
+function deleteMorningRefreshTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === "updateMarketDataForce" && t.getEventType() === ScriptApp.EventType.CLOCK) {
+      ScriptApp.deleteTrigger(t);
+    }
+  });
+}
+
+// ============================================================
+// Strike Screener — ad-hoc covered call / CSP pricing scanner.
+// Sheet "Strike Screener": B5 Ticker, C5 Start Strike, D5 End Strike,
+// E5 Strike Interval, F5 Option Type (Call/Put), G5 Expirations
+// (comma-separated; a bare number = weeks out, snapped to the closest
+// real expiration, or a literal YYYY-MM-DD date), L5 Run checkbox,
+// B7 Last run. Results populate from row 10 down, columns A-J:
+// Expiration, DTE, Strike, Type, Bid, Ask, Mid, Premium ($/contract),
+// Delta, IV %. Premium uses Bid (not Mid) since that's the realistic
+// fill price when you're the one selling.
+// Wire L5 as an INSTALLABLE "On edit" trigger -> handleScreenerCheckbox.
+// ============================================================
+const SCREENER_SHEET = "Strike Screener";
+const SCR_TICKER = "B5", SCR_START = "C5", SCR_END = "D5", SCR_INTERVAL = "E5",
+      SCR_TYPE = "F5", SCR_EXPIRATIONS = "G5", SCR_RUN = "I5", SCR_LAST_RUN = "J5";
+const SCR_TABLE_ROW = 10, SCR_TABLE_COL = 1, SCR_CLEAR_ROWS = 500;
+
+function handleScreenerCheckbox(e) {
+  if (!e || !e.range) return;
+  if (e.range.getSheet().getName() !== SCREENER_SHEET) return;
+  if (e.range.getA1Notation() !== SCR_RUN) return;
+  if (e.value !== "TRUE") return;
+  runStrikeScreener();
+  e.range.setValue(false);
+}
+
+function runStrikeScreener() {
+  const sheet = SpreadsheetApp.getActive().getSheetByName(SCREENER_SHEET);
+  if (!sheet) throw new Error('Sheet "' + SCREENER_SHEET + '" not found');
+
+  const symbol = sheet.getRange(SCR_TICKER).getValue().toString().trim().toUpperCase();
+  let startStrike = Number(sheet.getRange(SCR_START).getValue());
+  let endStrike = Number(sheet.getRange(SCR_END).getValue());
+  const interval = Number(sheet.getRange(SCR_INTERVAL).getValue()) || 10;
+  const typeRaw = sheet.getRange(SCR_TYPE).getValue().toString().trim().toLowerCase();
+  const optionType = typeRaw.indexOf("p") === 0 ? "put" : "call";
+  const expirationsRaw = sheet.getRange(SCR_EXPIRATIONS).getValue().toString();
+
+  sheet.getRange(SCR_TABLE_ROW, SCR_TABLE_COL, SCR_CLEAR_ROWS, 10).clearContent();
+
+  if (!symbol) {
+    sheet.getRange(SCR_LAST_RUN).setValue("Missing ticker");
+    return;
+  }
+
+  // Default strike range when left blank: start = 25% below spot (floored to
+  // nearest 10), end = spot itself (floored to nearest 10).
+  if (!startStrike || !endStrike) {
+    let spot;
+    try {
+      spot = fetchQuote(symbol);
+    } catch (err) {
+      sheet.getRange(SCR_LAST_RUN).setValue("Error fetching quote: " + err.message);
+      return;
+    }
+    if (!startStrike) {
+      startStrike = Math.floor((spot * 0.75) / 10) * 10;
+      sheet.getRange(SCR_START).setValue(startStrike);
+    }
+    if (!endStrike) {
+      endStrike = Math.floor(spot / 10) * 10;
+      sheet.getRange(SCR_END).setValue(endStrike);
+    }
+  }
+
+  let available;
+  try {
+    available = fetchExpirations(symbol);
+  } catch (err) {
+    sheet.getRange(SCR_LAST_RUN).setValue("Error fetching expirations: " + err.message);
+    return;
+  }
+
+  const targetExpirations = resolveExpirations(expirationsRaw, available);
+  const strikes = [];
+  for (let s = startStrike; s <= endStrike; s += interval) strikes.push(s);
+
+  let outRow = SCR_TABLE_ROW;
+  const today = new Date();
+
+  targetExpirations.forEach(function (exp) {
+    let chain;
+    try {
+      chain = fetchOptionChain(symbol, exp);
+    } catch (err) {
+      sheet.getRange(outRow, SCR_TABLE_COL).setValue("Error for " + exp + ": " + err.message);
+      outRow++;
+      return;
+    }
+    strikes.forEach(function (strike) {
+      // Nearest-strike match, not exact -- actual listed strikes won't always
+      // land on a clean multiple of the interval. The actual matched strike
+      // (which may differ slightly from the requested one) is what gets shown.
+      const match = findClosestOption(chain, strike, optionType);
+      const actualStrike = match ? Number(match.strike) : strike;
+      const dte = Math.round((new Date(exp) - today) / 86400000);
+      const mid = (match && match.bid != null && match.ask != null) ? (match.bid + match.ask) / 2 : "";
+      const premium = (match && match.bid != null) ? match.bid * 100 : "";
+      const row = [
+        optionType, dte, exp, actualStrike,
+        match ? match.bid : "", match ? match.ask : "", mid,
+        match && match.greeks ? match.greeks.delta : "",
+        match && match.greeks ? match.greeks.mid_iv : "",
+        premium
+      ];
+      sheet.getRange(outRow, SCR_TABLE_COL, 1, row.length).setValues([row]);
+      outRow++;
+    });
+  });
+
+  sheet.getRange(SCR_LAST_RUN).setValue(new Date());
+}
+
+function resolveExpirations(raw, available) {
+  const parts = raw.split(",").map(function (p) { return p.trim(); }).filter(function (p) { return p; });
+  const result = [];
+  parts.forEach(function (p) {
+    // A bare number means "N weeks out" -> the Friday of that week, not just
+    // today+N*7 days (which can land on the wrong weekday). A literal date
+    // string is used as-is. Either way we still snap to the closest real
+    // expiration below, in case that exact Friday isn't listed (holidays etc).
+    const target = /^\d+$/.test(p) ? nthFridayOut(Number(p)) : new Date(p);
+    const closest = closestExpiration(target, available);
+    if (closest) result.push(closest);
+  });
+  return result.filter(function (v, i) { return result.indexOf(v) === i; }); // de-dupe
+}
+
+function nthFridayOut(weeksOut) {
+  const today = new Date();
+  const dayOfWeek = today.getDay(); // 0=Sun ... 5=Fri ... 6=Sat
+  const daysUntilFriday = (5 - dayOfWeek + 7) % 7; // 0 if today is already Friday
+  const firstFriday = new Date(today.getTime() + daysUntilFriday * 86400000);
+  return new Date(firstFriday.getTime() + (weeksOut - 1) * 7 * 86400000);
+}
+
+// Nearest-strike match for the Screener only. Deliberately separate from
+// findOption() above, which does exact matching and is used for your real
+// open positions in runMarketDataUpdate -- that one should never "snap" to
+// a different strike than what you actually hold.
+function findClosestOption(chain, targetStrike, type) {
+  const candidates = chain.filter(function (o) { return o.option_type === type; });
+  if (candidates.length === 0) return null;
+  let best = candidates[0];
+  let bestDiff = Math.abs(Number(best.strike) - targetStrike);
+  candidates.forEach(function (o) {
+    const diff = Math.abs(Number(o.strike) - targetStrike);
+    if (diff < bestDiff) { best = o; bestDiff = diff; }
+  });
+  return best;
+}
+
+function fetchQuote(symbol) {
+  const url = TRADIER_BASE_URL + "/markets/quotes?symbols=" + encodeURIComponent(symbol);
+  const response = UrlFetchApp.fetch(url, {
+    method: "get",
+    headers: { Authorization: "Bearer " + TRADIER_TOKEN, Accept: "application/json" },
+    muteHttpExceptions: true
+  });
+  const json = JSON.parse(response.getContentText());
+  const quote = json.quotes && json.quotes.quote;
+  if (!quote) throw new Error("No quote returned for " + symbol);
+  return quote.last != null ? quote.last : (quote.bid + quote.ask) / 2;
+}
+
+function closestExpiration(targetDate, available) {
+  let best = null, bestDiff = Infinity;
+  available.forEach(function (a) {
+    const diff = Math.abs(new Date(a).getTime() - targetDate.getTime());
+    if (diff < bestDiff) { bestDiff = diff; best = a; }
+  });
+  return best;
+}
+
+function fetchExpirations(symbol) {
+  const url = TRADIER_BASE_URL + "/markets/options/expirations?symbol=" + encodeURIComponent(symbol) + "&includeAllRoots=true";
+  const response = UrlFetchApp.fetch(url, {
+    method: "get",
+    headers: { Authorization: "Bearer " + TRADIER_TOKEN, Accept: "application/json" },
+    muteHttpExceptions: true
+  });
+  const json = JSON.parse(response.getContentText());
+  if (!json.expirations || !json.expirations.date) return [];
+  const dates = json.expirations.date;
+  return Array.isArray(dates) ? dates : [dates];
 }
 
 function findOption(chain, strike, type) {
