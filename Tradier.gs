@@ -178,8 +178,8 @@ function deleteMorningRefreshTrigger() {
 // Sheet "Strike Screener": B5 Ticker, C5 Start Strike, D5 End Strike,
 // E5 Strike Interval, F5 Option Type (Call/Put), G5 Expirations
 // (comma-separated; a bare number = weeks out, snapped to the closest
-// real expiration, or a literal YYYY-MM-DD date), L5 Run checkbox,
-// B7 Last run. Results populate from row 10 down, columns A-J:
+// real expiration, or a literal YYYY-MM-DD date), I5 Run checkbox,
+// J5 Last run. Results populate from row 8 down, columns A-J:
 // Expiration, DTE, Strike, Type, Bid, Ask, Mid, Premium ($/contract),
 // Delta, IV %. Premium uses Bid (not Mid) since that's the realistic
 // fill price when you're the one selling.
@@ -188,7 +188,7 @@ function deleteMorningRefreshTrigger() {
 const SCREENER_SHEET = "Strike Screener";
 const SCR_TICKER = "B5", SCR_START = "C5", SCR_END = "D5", SCR_INTERVAL = "E5",
       SCR_TYPE = "F5", SCR_EXPIRATIONS = "G5", SCR_RUN = "I5", SCR_LAST_RUN = "J5";
-const SCR_TABLE_ROW = 10, SCR_TABLE_COL = 1, SCR_CLEAR_ROWS = 500;
+const SCR_TABLE_ROW = 8, SCR_TABLE_COL = 1, SCR_CLEAR_ROWS = 500;
 
 function handleScreenerCheckbox(e) {
   if (!e || !e.range) return;
@@ -218,8 +218,10 @@ function runStrikeScreener() {
     return;
   }
 
-  // Default strike range when left blank: start = 25% below spot (floored to
-  // nearest 10), end = spot itself (floored to nearest 10).
+  // Default strike range when left blank. Puts (CSPs) look below spot;
+  // calls (CCs) look above spot -- ranges are asymmetric on purpose.
+  // Put:  start = 25% below spot (floored to nearest 10), end = 5% below spot (ceiled to nearest 10).
+  // Call: start = 5% above spot (floored to nearest 10), end = 30% above spot (ceiled to nearest 10).
   if (!startStrike || !endStrike) {
     let spot;
     try {
@@ -228,16 +230,18 @@ function runStrikeScreener() {
       sheet.getRange(SCR_LAST_RUN).setValue("Error fetching quote: " + err.message);
       return;
     }
+    const lowPct = optionType === "call" ? 1.05 : 0.75;
+    const highPct = optionType === "call" ? 1.30 : 0.95;
     if (!startStrike) {
-      startStrike = Math.floor((spot * 0.75) / 10) * 10;
+      startStrike = Math.floor((spot * lowPct) / 10) * 10;
       sheet.getRange(SCR_START).setValue(startStrike);
     }
     if (!endStrike) {
-      endStrike = Math.floor(spot / 10) * 10;
+      endStrike = Math.ceil((spot * highPct) / 10) * 10;
       sheet.getRange(SCR_END).setValue(endStrike);
     }
   }
-
+ 
   let available;
   try {
     available = fetchExpirations(symbol);
