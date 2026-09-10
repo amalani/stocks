@@ -40,6 +40,7 @@ function onOpen() {
     .createMenu("Tradier")
     .addItem("Refresh Market Data Now", "updateMarketDataForce")
     .addItem("Update Strike Screener", "runStrikeScreener")
+    .addItem("Clean Up Market Data", "cleanupMarketDataRows")
     .addToUi();
 }
 
@@ -105,6 +106,8 @@ function runMarketDataUpdate() {
 
   updateDashboardRefreshTime();
 }
+
+// cleanupMarketDataRows() lives in Helpers.gs now -- see that file.
 
 function fetchOptionChain(symbol, expiration) {
   const url = TRADIER_BASE_URL + "/markets/options/chains?symbol=" + encodeURIComponent(symbol)
@@ -175,28 +178,49 @@ function deleteMorningRefreshTrigger() {
 
 // ============================================================
 // Strike Screener — ad-hoc covered call / CSP pricing scanner.
-// Sheet "Strike Screener": B5 Ticker, C5 Start Strike, D5 End Strike,
-// E5 Strike Interval, F5 Option Type (Call/Put), G5 Expirations
-// (comma-separated; a bare number = weeks out, snapped to the closest
-// real expiration, or a literal YYYY-MM-DD date), I5 Run checkbox,
-// J5 Last run. Results populate from row 8 down, columns A-J:
-// Expiration, DTE, Strike, Type, Bid, Ask, Mid, Premium ($/contract),
-// Delta, IV %. Premium uses Bid (not Mid) since that's the realistic
-// fill price when you're the one selling.
-// Wire L5 as an INSTALLABLE "On edit" trigger -> handleScreenerCheckbox.
+// Sheet "Strike Screener", row 5 (labels in row 4):
+//   A5 Ticker (dropdown+override), B5 Current Price (=GOOGLEFINANCE(A5,"price")),
+//   C5 Type (Call/Put), D5 Start Strike, E5 End Strike, F5 Interval,
+//   G5 Clear Strike checkbox, H5 Run checkbox, I5 Last Run.
+//   J4 "Dates" label, K4:R4 the next 8 Fridays (formulas, K4 =
+//   TODAY()+MOD(6-WEEKDAY(TODAY()),7), each next cell = previous+7),
+//   K5:R5 checkboxes under each date. S5 Extra/override dates
+//   (comma-separated, additive with whatever's checked in K5:R5; a bare
+//   number = weeks out snapped to the closest real expiration, or a
+//   literal YYYY-MM-DD date -- for non-Friday weeklies or Friday holidays).
+// Results populate from row 8 down, columns A-J: Type, DTE, Expiration,
+// Strike, Bid, Mid, Ask, Delta, IV %, Premium ($/contract). Premium uses
+// Bid (not Mid) since that's the realistic fill price when you're the
+// one selling.
+// Wire G5 and H5 as an INSTALLABLE "On edit" trigger -> handleScreenerCheckbox.
 // ============================================================
 const SCREENER_SHEET = "Strike Screener";
-const SCR_TICKER = "B5", SCR_START = "C5", SCR_END = "D5", SCR_INTERVAL = "E5",
-      SCR_TYPE = "F5", SCR_EXPIRATIONS = "G5", SCR_RUN = "I5", SCR_LAST_RUN = "J5";
+const SCR_TICKER = "A5", SCR_PRICE = "B5", SCR_TYPE = "C5",
+      SCR_START = "D5", SCR_END = "E5", SCR_INTERVAL = "F5",
+      SCR_CLEAR = "G5", SCR_RUN = "H5", SCR_LAST_RUN = "I5";
+const SCR_DATE_CELLS = ["K4", "L4", "M4", "N4", "O4", "P4", "Q4", "R4"];
+const SCR_CHECKBOX_CELLS = ["K5", "L5", "M5", "N5", "O5", "P5", "Q5", "R5"];
+const SCR_EXTRA_DATES = "S5";
 const SCR_TABLE_ROW = 8, SCR_TABLE_COL = 1, SCR_CLEAR_ROWS = 500;
 
 function handleScreenerCheckbox(e) {
   if (!e || !e.range) return;
   if (e.range.getSheet().getName() !== SCREENER_SHEET) return;
-  if (e.range.getA1Notation() !== SCR_RUN) return;
   if (e.value !== "TRUE") return;
-  runStrikeScreener();
-  e.range.setValue(false);
+  const cell = e.range.getA1Notation();
+
+  if (cell === SCR_CLEAR) {
+    const sheet = e.range.getSheet();
+    sheet.getRange(SCR_START).clearContent();
+    sheet.getRange(SCR_END).clearContent();
+    e.range.setValue(false);
+    return;
+  }
+  if (cell === SCR_RUN) {
+    runStrikeScreener();
+    e.range.setValue(false);
+    return;
+  }
 }
 
 function runStrikeScreener() {
@@ -209,7 +233,6 @@ function runStrikeScreener() {
   const interval = Number(sheet.getRange(SCR_INTERVAL).getValue()) || 10;
   const typeRaw = sheet.getRange(SCR_TYPE).getValue().toString().trim().toLowerCase();
   const optionType = typeRaw.indexOf("p") === 0 ? "put" : "call";
-  const expirationsRaw = sheet.getRange(SCR_EXPIRATIONS).getValue().toString();
 
   sheet.getRange(SCR_TABLE_ROW, SCR_TABLE_COL, SCR_CLEAR_ROWS, 10).clearContent();
 
@@ -222,12 +245,12 @@ function runStrikeScreener() {
   // calls (CCs) look above spot -- ranges are asymmetric on purpose.
   // Put:  start = 25% below spot (floored to nearest 10), end = 5% below spot (ceiled to nearest 10).
   // Call: start = 5% above spot (floored to nearest 10), end = 30% above spot (ceiled to nearest 10).
+  // Spot comes straight from B5's live GOOGLEFINANCE price -- no separate
+  // Tradier quote call needed just to compute a default range.
   if (!startStrike || !endStrike) {
-    let spot;
-    try {
-      spot = fetchQuote(symbol);
-    } catch (err) {
-      sheet.getRange(SCR_LAST_RUN).setValue("Error fetching quote: " + err.message);
+    const spot = Number(sheet.getRange(SCR_PRICE).getValue());
+    if (!spot) {
+      sheet.getRange(SCR_LAST_RUN).setValue("No price in " + SCR_PRICE);
       return;
     }
     const lowPct = optionType === "call" ? 1.05 : 0.75;
@@ -241,7 +264,7 @@ function runStrikeScreener() {
       sheet.getRange(SCR_END).setValue(endStrike);
     }
   }
- 
+
   let available;
   try {
     available = fetchExpirations(symbol);
@@ -250,7 +273,7 @@ function runStrikeScreener() {
     return;
   }
 
-  const targetExpirations = resolveExpirations(expirationsRaw, available);
+  const targetExpirations = collectSelectedExpirations(sheet, available);
   const strikes = [];
   for (let s = startStrike; s <= endStrike; s += interval) strikes.push(s);
 
@@ -277,7 +300,7 @@ function runStrikeScreener() {
       const premium = (match && match.bid != null) ? match.bid * 100 : "";
       const row = [
         optionType, dte, exp, actualStrike,
-        match ? match.bid : "", match ? match.ask : "", mid,
+        match ? match.bid : "", mid, match ? match.ask : "",
         match && match.greeks ? match.greeks.delta : "",
         match && match.greeks ? match.greeks.mid_iv : "",
         premium
@@ -290,18 +313,29 @@ function runStrikeScreener() {
   sheet.getRange(SCR_LAST_RUN).setValue(new Date());
 }
 
-function resolveExpirations(raw, available) {
-  const parts = raw.split(",").map(function (p) { return p.trim(); }).filter(function (p) { return p; });
+// Combines the checked K5:O5 Fridays with whatever's typed in P5 (additive,
+// not either/or). Checked Fridays snap to the closest real listed
+// expiration (handles holiday closures automatically); P5 entries accept
+// either a bare "weeks out" number or a literal YYYY-MM-DD date, for
+// non-Friday weeklies or anything the 5-Friday grid doesn't cover.
+function collectSelectedExpirations(sheet, available) {
   const result = [];
-  parts.forEach(function (p) {
-    // A bare number means "N weeks out" -> the Friday of that week, not just
-    // today+N*7 days (which can land on the wrong weekday). A literal date
-    // string is used as-is. Either way we still snap to the closest real
-    // expiration below, in case that exact Friday isn't listed (holidays etc).
-    const target = /^\d+$/.test(p) ? nthFridayOut(Number(p)) : new Date(p);
-    const closest = closestExpiration(target, available);
+
+  for (let i = 0; i < SCR_DATE_CELLS.length; i++) {
+    if (sheet.getRange(SCR_CHECKBOX_CELLS[i]).getValue() !== true) continue;
+    const dateVal = sheet.getRange(SCR_DATE_CELLS[i]).getValue();
+    const closest = closestExpiration(new Date(dateVal), available);
     if (closest) result.push(closest);
-  });
+  }
+
+  const extraRaw = sheet.getRange(SCR_EXTRA_DATES).getValue().toString();
+  extraRaw.split(",").map(function (p) { return p.trim(); }).filter(function (p) { return p; })
+    .forEach(function (p) {
+      const target = /^\d+$/.test(p) ? nthFridayOut(Number(p)) : new Date(p);
+      const closest = closestExpiration(target, available);
+      if (closest) result.push(closest);
+    });
+
   return result.filter(function (v, i) { return result.indexOf(v) === i; }); // de-dupe
 }
 
