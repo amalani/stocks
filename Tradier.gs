@@ -312,8 +312,9 @@ function runStrikeScreener() {
       const dte = Math.round((new Date(exp) - today) / 86400000);
       const mid = (match && match.bid != null && match.ask != null) ? (match.bid + match.ask) / 2 : "";
       const premium = (match && match.bid != null) ? match.bid * 100 : "";
+      const typeLabel = optionType === "call" ? "Call" : "Put";
       const row = [
-        optionType, dte, exp, actualStrike,
+        typeLabel, dte, exp, actualStrike,
         match ? match.bid : "", mid, match ? match.ask : "",
         match && match.greeks ? match.greeks.delta : "",
         match && match.greeks ? match.greeks.mid_iv : "",
