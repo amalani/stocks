@@ -228,18 +228,32 @@ function runStrikeScreener() {
   if (!sheet) throw new Error('Sheet "' + SCREENER_SHEET + '" not found');
 
   const symbol = sheet.getRange(SCR_TICKER).getValue().toString().trim().toUpperCase();
+  let intervalRaw = sheet.getRange(SCR_INTERVAL).getValue();
   let startStrike = Number(sheet.getRange(SCR_START).getValue());
   let endStrike = Number(sheet.getRange(SCR_END).getValue());
-  const interval = Number(sheet.getRange(SCR_INTERVAL).getValue()) || 10;
   const typeRaw = sheet.getRange(SCR_TYPE).getValue().toString().trim().toLowerCase();
   const optionType = typeRaw.indexOf("p") === 0 ? "put" : "call";
 
-  sheet.getRange(SCR_TABLE_ROW, SCR_TABLE_COL, SCR_CLEAR_ROWS, 10).clearContent();
-
   if (!symbol) {
-    sheet.getRange(SCR_LAST_RUN).setValue("Missing ticker");
+    sheet.getRange(SCR_LAST_RUN).setValue("Missing ticker (A5)");
     return;
   }
+
+  // Default strike interval to 10 when left blank -- and write it back to
+  // F5 so it's visible/adjustable, rather than silently using 10 under
+  // the hood. A present-but-invalid value (0, negative, non-numeric)
+  // still blocks the run instead of guessing.
+  if (intervalRaw === "" || intervalRaw === null) {
+    intervalRaw = 10;
+    sheet.getRange(SCR_INTERVAL).setValue(intervalRaw);
+  }
+  const interval = Number(intervalRaw);
+  if (!interval || interval <= 0) {
+    sheet.getRange(SCR_LAST_RUN).setValue("Invalid strike interval (F5)");
+    return;
+  }
+
+  sheet.getRange(SCR_TABLE_ROW, SCR_TABLE_COL, SCR_CLEAR_ROWS, 10).clearContent();
 
   // Default strike range when left blank. Puts (CSPs) look below spot;
   // calls (CCs) look above spot -- ranges are asymmetric on purpose.
