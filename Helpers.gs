@@ -23,3 +23,25 @@ function cleanupMarketDataRows() {
     }
   });
 }
+
+/**
+ * Google Finance-compatible ticker, using the "Tickers" sheet (column A:
+ * Ticker as used everywhere else in this workbook, column B: Google
+ * Finance override, e.g. "BATS:DRAM") when a matching row exists,
+ * otherwise the ticker unchanged. Only a couple of ETFs need an override
+ * -- everything else just passes through.
+ * Usage: =GOOGLEFINANCE(GFTICKER(A5), "price")
+ */
+function GFTICKER(ticker) {
+  if (!ticker) return ticker;
+  const sheet = SpreadsheetApp.getActive().getSheetByName("Tickers");
+  if (!sheet) return ticker;
+  const data = sheet.getDataRange().getValues();
+  for (let i = 0; i < data.length; i++) {
+    if (String(data[i][0]).trim().toUpperCase() === String(ticker).trim().toUpperCase() && data[i][1]) {
+      return data[i][1];
+    }
+  }
+  return ticker;
+}
+ 
