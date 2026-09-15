@@ -91,16 +91,17 @@ function runMarketDataUpdate() {
       const chain = chainCache[cacheKey];
       const match = findOption(chain, strike, type);
       if (!match) {
-        sheet.getRange(row, 12).setValue("No match found");
+        sheet.getRange(row, 13).setValue("No match found");
         continue;
       }
       sheet.getRange(row, 7).setValue(match.bid);                                 // G Bid
       sheet.getRange(row, 8).setValue(match.ask);                                 // H Ask
       sheet.getRange(row, 10).setValue(match.greeks ? match.greeks.delta : "");    // J Delta
       sheet.getRange(row, 11).setValue(match.greeks ? match.greeks.mid_iv : "");   // K IV
-      sheet.getRange(row, 12).setValue(new Date());                               // L Last Updated
+      sheet.getRange(row, 12).setValue(match.greeks ? match.greeks.theta : "");    // L theta
+      sheet.getRange(row, 13).setValue(new Date());                               // L Last Updated
     } catch (err) {
-      sheet.getRange(row, 12).setValue("Error: " + err.message);
+      sheet.getRange(row, 13).setValue("Error: " + err.message);
     }
   }
 
@@ -134,8 +135,8 @@ function fetchOptionChain(symbol, expiration) {
 // Must be added as an INSTALLABLE "On edit" trigger (Triggers > Add Trigger),
 // not left as a bare onEdit(e) — simple triggers can't call UrlFetchApp.
 const REFRESH_SHEET = "Dashboard"; // sheet with the checkbox — matches the renamed tab
-const REFRESH_CELL = "L1"; // cell holding the checkbox — adjust to match
-const REFRESH_DATE = "N1"; // cell showing when the last refresh finished
+const REFRESH_CELL = "A6"; // cell holding the checkbox — adjust to match
+const REFRESH_DATE = "B6"; // cell showing when the last refresh finished
 
 function handleRefreshCheckbox(e) {
   if (!e || !e.range) return;
@@ -318,6 +319,7 @@ function runStrikeScreener() {
         match ? match.bid : "", mid, match ? match.ask : "",
         match && match.greeks ? match.greeks.delta : "",
         match && match.greeks ? match.greeks.mid_iv : "",
+        match && match.greeks ? match.greeks.theta : "",
         premium
       ];
       sheet.getRange(outRow, SCR_TABLE_COL, 1, row.length).setValues([row]);
