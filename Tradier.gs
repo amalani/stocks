@@ -1,9 +1,10 @@
 /**
  * Tradier Live Market Data Updater — Options Trade Tracker
  *
- * Pulls current bid/ask, delta, and IV for every OPEN chain listed on the
- * "Market Data" tab (columns A-E there are auto-populated from Chain Summary).
- * Writes results into columns F (Bid), G (Ask), I (Delta), J (IV %), K (Last Updated).
+ * Pulls current bid/ask, delta, IV, and theta for every OPEN chain listed on
+ * the "Market Data" tab (columns A-E there are auto-populated from Chain
+ * Summary). Writes results into columns G (Bid), H (Ask), J (Delta),
+ * K (IV %), L (Theta), M (Last Updated).
  *
  * SETUP
  * 1. In the spreadsheet: Extensions > Apps Script.
@@ -98,8 +99,8 @@ function runMarketDataUpdate() {
       sheet.getRange(row, 8).setValue(match.ask);                                 // H Ask
       sheet.getRange(row, 10).setValue(match.greeks ? match.greeks.delta : "");    // J Delta
       sheet.getRange(row, 11).setValue(match.greeks ? match.greeks.mid_iv : "");   // K IV
-      sheet.getRange(row, 12).setValue(match.greeks ? match.greeks.theta : "");    // L theta
-      sheet.getRange(row, 13).setValue(new Date());                               // L Last Updated
+      sheet.getRange(row, 12).setValue(match.greeks ? match.greeks.theta : "");    // L Theta
+      sheet.getRange(row, 13).setValue(new Date());                               // M Last Updated
     } catch (err) {
       sheet.getRange(row, 13).setValue("Error: " + err.message);
     }
@@ -135,8 +136,8 @@ function fetchOptionChain(symbol, expiration) {
 // Must be added as an INSTALLABLE "On edit" trigger (Triggers > Add Trigger),
 // not left as a bare onEdit(e) — simple triggers can't call UrlFetchApp.
 const REFRESH_SHEET = "Dashboard"; // sheet with the checkbox — matches the renamed tab
-const REFRESH_CELL = "A6"; // cell holding the checkbox — adjust to match
-const REFRESH_DATE = "B6"; // cell showing when the last refresh finished
+const REFRESH_CELL = "L1"; // cell holding the checkbox — adjust to match
+const REFRESH_DATE = "N1"; // cell showing when the last refresh finished
 
 function handleRefreshCheckbox(e) {
   if (!e || !e.range) return;
@@ -189,9 +190,9 @@ function deleteMorningRefreshTrigger() {
 //   (comma-separated, additive with whatever's checked in K5:R5; a bare
 //   number = weeks out snapped to the closest real expiration, or a
 //   literal YYYY-MM-DD date -- for non-Friday weeklies or Friday holidays).
-// Results populate from row 8 down, columns A-J: Type, DTE, Expiration,
-// Strike, Bid, Mid, Ask, Delta, IV %, Premium ($/contract). Premium uses
-// Bid (not Mid) since that's the realistic fill price when you're the
+// Results populate from row 8 down, columns A-K: Type, DTE, Expiration,
+// Strike, Bid, Mid, Ask, Delta, IV %, Theta, Premium ($/contract). Premium
+// uses Bid (not Mid) since that's the realistic fill price when you're the
 // one selling.
 // Wire G5 and H5 as an INSTALLABLE "On edit" trigger -> handleScreenerCheckbox.
 // ============================================================
@@ -254,7 +255,7 @@ function runStrikeScreener() {
     return;
   }
 
-  sheet.getRange(SCR_TABLE_ROW, SCR_TABLE_COL, SCR_CLEAR_ROWS, 10).clearContent();
+  sheet.getRange(SCR_TABLE_ROW, SCR_TABLE_COL, SCR_CLEAR_ROWS, 11).clearContent(); // 11 cols now that Theta's included
 
   // Default strike range when left blank. Puts (CSPs) look below spot;
   // calls (CCs) look above spot -- ranges are asymmetric on purpose.
