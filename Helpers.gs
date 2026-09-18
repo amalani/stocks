@@ -1,6 +1,6 @@
 // Clears leftover data on Market Data rows whose Chain ID (column A) is
 // blank -- e.g. a position that was closed/removed from Chain Summary but
-// still has stale Bid/Ask/Delta/IV/Last Updated values sitting in G:L.
+// still has stale Bid/Ask/Delta/IV/Last Updated values sitting in G:M.
 // Only clears content (values + any formulas) across A:L for those rows;
 // it never deletes/shifts rows, so nothing below row 100 is affected and
 // row positions stay stable. If column A holds a formula that should
@@ -12,14 +12,16 @@ function cleanupMarketDataRows() {
   const sheet = SpreadsheetApp.getActive().getSheetByName(SHEET_NAME);
   if (!sheet) throw new Error('Sheet "' + SHEET_NAME + '" not found');
 
+  const lastColumn = 13; // M
+
   const numRows = CLEANUP_LAST_ROW - CLEANUP_FIRST_ROW + 1;
-  const range = sheet.getRange(CLEANUP_FIRST_ROW, 1, numRows, 12); // A:L
+  const range = sheet.getRange(CLEANUP_FIRST_ROW, 1, numRows, lastColumn); // A:M
   const values = range.getValues();
 
   values.forEach(function (row, i) {
     const chainId = row[0];
     if (chainId === "" || chainId === null) {
-      sheet.getRange(CLEANUP_FIRST_ROW + i, 1, 1, 12).clearContent();
+      sheet.getRange(CLEANUP_FIRST_ROW + i, 1, 1, lastColumn).clearContent();
     }
   });
 }
@@ -44,4 +46,3 @@ function GFTICKER(ticker) {
   }
   return ticker;
 }
- 
