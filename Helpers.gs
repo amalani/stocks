@@ -1,27 +1,34 @@
+/**
+ * Helpers.gs — misc maintenance functions, kept separate from the main
+ * Tradier script file so that file doesn't get cluttered. Apps Script
+ * shares one global scope across every file in the project, so
+ * SHEET_NAME (declared in the main file) resolves fine here too.
+ */
+ 
 // Clears leftover data on Market Data rows whose Chain ID (column A) is
 // blank -- e.g. a position that was closed/removed from Chain Summary but
-// still has stale Bid/Ask/Delta/IV/Last Updated values sitting in G:M.
-// Only clears content (values + any formulas) across A:L for those rows;
+// still has stale Bid/Ask/Delta/IV/Theta/Last Updated values sitting
+// around. Only clears specific columns (not the whole row), leaving A-F
+// (Chain ID, Symbol, Spot, Type, Strike, Expiration) and Mid (I) untouched;
 // it never deletes/shifts rows, so nothing below row 100 is affected and
-// row positions stay stable. If column A holds a formula that should
-// survive being "blank" (e.g. an ARRAYFORMULA spill), let me know and
-// this can be narrowed to only clear columns G:L instead.
+// row positions stay stable.
 const CLEANUP_FIRST_ROW = 5, CLEANUP_LAST_ROW = 100;
-
+const CLEANUP_COLUMNS = [7, 8, 10, 11, 12, 13]; // G Bid, H Ask, J Delta, K IV, L Theta, M Last Updated
+ 
 function cleanupMarketDataRows() {
   const sheet = SpreadsheetApp.getActive().getSheetByName(SHEET_NAME);
   if (!sheet) throw new Error('Sheet "' + SHEET_NAME + '" not found');
-
-  const lastColumn = 13; // M
-
+ 
   const numRows = CLEANUP_LAST_ROW - CLEANUP_FIRST_ROW + 1;
-  const range = sheet.getRange(CLEANUP_FIRST_ROW, 1, numRows, lastColumn); // A:M
-  const values = range.getValues();
-
-  values.forEach(function (row, i) {
-    const chainId = row[0];
+  const chainIds = sheet.getRange(CLEANUP_FIRST_ROW, 1, numRows, 1).getValues();
+ 
+  chainIds.forEach(function (r, i) {
+    const chainId = r[0];
     if (chainId === "" || chainId === null) {
-      sheet.getRange(CLEANUP_FIRST_ROW + i, 1, 1, lastColumn).clearContent();
+      const row = CLEANUP_FIRST_ROW + i;
+      CLEANUP_COLUMNS.forEach(function (col) {
+        sheet.getRange(row, col).clearContent();
+      });
     }
   });
 }
