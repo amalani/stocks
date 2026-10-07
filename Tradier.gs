@@ -196,7 +196,14 @@ function deleteMorningRefreshTrigger() {
 // one selling.
 // Wire G5 and H5 as an INSTALLABLE "On edit" trigger -> handleScreenerCheckbox.
 // ============================================================
-const SCREENER_SHEET = "Strike Screener";
+// Multiple screener tabs are supported: any sheet whose name starts with
+// "Screener" or "Strike Screener" (e.g. "Strike Screener", "Screener1",
+// "Screener2") is treated as a screener. Duplicate the tab and rename it to
+// match. Every tab must keep the same cell layout.
+const SCREENER_SHEET = "Strike Screener"; // fallback when the active sheet isn't a screener
+function isScreenerSheet(sheet) {
+  return /^(strike )?screener/i.test(sheet.getName());
+}
 const SCR_TICKER = "A5", SCR_PRICE = "B5", SCR_TYPE = "C5",
       SCR_START = "D5", SCR_END = "E5", SCR_INTERVAL = "F5",
       SCR_CLEAR = "G5", SCR_RUN = "H5", SCR_LAST_RUN = "I5";
@@ -207,7 +214,7 @@ const SCR_TABLE_ROW = 8, SCR_TABLE_COL = 1, SCR_CLEAR_ROWS = 500;
 
 function handleScreenerCheckbox(e) {
   if (!e || !e.range) return;
-  if (e.range.getSheet().getName() !== SCREENER_SHEET) return;
+  if (!isScreenerSheet(e.range.getSheet())) return;
   if (e.value !== "TRUE") return;
   const cell = e.range.getA1Notation();
 
@@ -219,15 +226,22 @@ function handleScreenerCheckbox(e) {
     return;
   }
   if (cell === SCR_RUN) {
-    runStrikeScreener();
+    runStrikeScreener(e.range.getSheet());
     e.range.setValue(false);
     return;
   }
 }
 
-function runStrikeScreener() {
-  const sheet = SpreadsheetApp.getActive().getSheetByName(SCREENER_SHEET);
-  if (!sheet) throw new Error('Sheet "' + SCREENER_SHEET + '" not found');
+// Runs on the sheet passed in (checkbox handler), else the active sheet if it's
+// a screener (menu item), else the original "Strike Screener" tab.
+function runStrikeScreener(targetSheet) {
+  const ss = SpreadsheetApp.getActive();
+  let sheet = targetSheet;
+  if (!sheet || typeof sheet.getName !== "function") {
+    const active = ss.getActiveSheet();
+    sheet = isScreenerSheet(active) ? active : ss.getSheetByName(SCREENER_SHEET);
+  }
+  if (!sheet) throw new Error('No screener sheet found');
 
   const symbol = sheet.getRange(SCR_TICKER).getValue().toString().trim().toUpperCase();
   let intervalRaw = sheet.getRange(SCR_INTERVAL).getValue();
