@@ -20,6 +20,17 @@ python3 screener.py --mock     # fake data, for trying the page (uses data/mock.
 python3 screener.py --help     # delta, DTE window, liquidity and IV thresholds
 ```
 
+## Changing the page (UX-only edits)
+
+Every run also saves `public/runs/<date>_<time>.json` (the data) and a matching `.html`. After editing
+`template.html`, apply it to the latest page and all saved ones without touching the API or the DB:
+
+```
+python3 screener.py --rerender
+```
+
+Note that a `--mock` run overwrites `public/index.html`; use `--out` to keep mock output separate.
+
 ## Daily run + serving
 
 ```

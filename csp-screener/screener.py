@@ -317,6 +317,22 @@ def load_env(path):
             os.environ.setdefault(k.strip(), v.strip().strip("'\""))
 
 
+def render_page(payload):
+    blob = json.dumps(payload, separators=(",", ":")).replace("</", "<\\/")
+    return (HERE / "template.html").read_text().replace("/*__DATA__*/null", blob)
+
+
+def rerender(out):
+    n = 0
+    for f in sorted((out / "runs").glob("*.json")):
+        f.with_suffix(".html").write_text(render_page(json.loads(f.read_text())))
+        n += 1
+    if (out / "latest.json").exists():
+        (out / "index.html").write_text(render_page(json.loads((out / "latest.json").read_text())))
+        n += 1
+    print(f"re-rendered {n} pages in {out}", file=sys.stderr)
+
+
 def main():
     load_env(HERE / ".env")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -332,7 +348,13 @@ def main():
     ap.add_argument("--out", default=str(HERE / "public"))
     ap.add_argument("--db", default=None)
     ap.add_argument("--mock", action="store_true")
+    ap.add_argument("--rerender", action="store_true",
+                    help="rebuild index.html and every runs/*.html from saved JSON with the current template "
+                         "(no API calls, no DB writes); use after UX-only changes to template.html")
     cfg = ap.parse_args()
+
+    if cfg.rerender:
+        return rerender(Path(cfg.out))
 
     now = datetime.now(ET)
     today = now.date()
@@ -416,9 +438,14 @@ def main():
     }
     out = Path(cfg.out)
     out.mkdir(parents=True, exist_ok=True)
-    blob = json.dumps(payload, separators=(",", ":")).replace("</", "<\\/")
     (out / "latest.json").write_text(json.dumps(payload, indent=1))
-    (out / "index.html").write_text((HERE / "template.html").read_text().replace("/*__DATA__*/null", blob))
+    (out / "index.html").write_text(render_page(payload))
+    # Keep a snapshot of every run so UX changes can be re-applied to old pages (--rerender).
+    runs = out / "runs"
+    runs.mkdir(exist_ok=True)
+    stamp = now.strftime("%Y-%m-%d_%H%M") + ("-mock" if cfg.mock else "")
+    (runs / f"{stamp}.json").write_text(json.dumps(payload, separators=(",", ":")))
+    (runs / f"{stamp}.html").write_text(render_page(payload))
     with open(out / "latest.csv", "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(CSV_COLS)
