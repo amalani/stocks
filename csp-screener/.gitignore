@@ -12,4 +12,5 @@ secrets*
 # Generated output / history
 data/
 public/
+public-mock/
 __pycache__/

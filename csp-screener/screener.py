@@ -345,13 +345,15 @@ def main():
     ap.add_argument("--ivr-min", type=float, default=50.0)
     ap.add_argument("--ivrv-min", type=float, default=1.2)
     ap.add_argument("--min-history", type=int, default=20, help="days of IV history before IV Rank is shown")
-    ap.add_argument("--out", default=str(HERE / "public"))
+    ap.add_argument("--out", default=None, help="output dir (default public/, or public-mock/ with --mock)")
     ap.add_argument("--db", default=None)
     ap.add_argument("--mock", action="store_true")
     ap.add_argument("--rerender", action="store_true",
                     help="rebuild index.html and every runs/*.html from saved JSON with the current template "
                          "(no API calls, no DB writes); use after UX-only changes to template.html")
     cfg = ap.parse_args()
+    if cfg.out is None:
+        cfg.out = str(HERE / ("public-mock" if cfg.mock else "public"))
 
     if cfg.rerender:
         return rerender(Path(cfg.out))

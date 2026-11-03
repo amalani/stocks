@@ -29,7 +29,8 @@ Every run also saves `public/runs/<date>_<time>.json` (the data) and a matching 
 python3 screener.py --rerender
 ```
 
-Note that a `--mock` run overwrites `public/index.html`; use `--out` to keep mock output separate.
+`--mock` writes to `public-mock/` (separate from `public/`), so it never touches the live page. Add `--mock` to
+`--rerender` to rebuild the mock pages.
 
 ## Daily run + serving
 

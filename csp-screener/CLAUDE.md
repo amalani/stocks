@@ -16,7 +16,8 @@ Owner's trading rules the screener encodes (change via CLI flags, not by editing
 - `template.html`: the page. `screener.py` replaces the literal `/*__DATA__*/null` with the JSON payload and writes
   `public/index.html`. Vanilla JS, no CDN, so it works offline on a locked-down server.
 - `watchlist.txt`: tickers, `#` comments.
-- Generated and gitignored: `public/` (index.html, latest.json, latest.csv), `data/screener.db` (live), `data/mock.db`.
+- Generated and gitignored: `public/` (index.html, latest.json, latest.csv, runs/ snapshots), `public-mock/` (same, for `--mock`),
+  `data/screener.db` (live), `data/mock.db`.
 - Secrets: `.env` (gitignored; see `.env.example`). Never print, log, or commit the token.
 
 ## Run / test
@@ -25,7 +26,8 @@ python3 screener.py --mock        # no network; seeds 120 days of fake history i
 python3 screener.py               # live; needs TRADIER_TOKEN in .env
 python3 screener.py --help        # thresholds
 ```
-After any change to the page, run `--mock` and open `public/index.html` (a headless-browser screenshot is a good check).
+After any change to the page, run `--mock` and open `public-mock/index.html` (a headless-browser screenshot is a good check).
+UX-only template edits: `python3 screener.py --rerender` (add `--mock` for the mock pages) rebuilds every saved page.
 Mock returns Tradier-shaped responses, so it exercises the real parsing code, but it cannot prove the live API matches.
 
 ## Data flow
