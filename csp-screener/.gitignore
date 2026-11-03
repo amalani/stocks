@@ -1,0 +1,15 @@
+# Secrets and local config: never commit
+.env
+.env.*
+!.env.example
+token.txt
+finnhub.txt
+*.key
+*.pem
+secrets*
+*.local.*
+
+# Generated output / history
+data/
+public/
+__pycache__/

@@ -1,0 +1,8 @@
+# One ticker per line. '#' starts a comment. Starter list: edit freely (10-20 names).
+AMD
+MU
+COST
+GOOGL
+NVDA
+MSFT
+AMZN

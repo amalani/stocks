@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CSP Screener</title>
+<style>
+:root{
+  --bg:#f6f6f3; --panel:#ffffff; --ink:#1c2024; --mute:#6a717b; --line:#e3e4e0; --hover:#f0f1ed; --sel:#e8eefc;
+  --good:#136c43; --goodbg:#e3f3ea; --warn:#8a5a00; --warnbg:#fff1cf; --bad:#a82a1f; --badbg:#fbe7e4;
+  --c0:#2457d6; --c1:#c2570c;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#14161a; --panel:#1b1e23; --ink:#e7e9ec; --mute:#98a0ab; --line:#2b3037; --hover:#222630; --sel:#1f2b45;
+    --good:#58c58b; --goodbg:#16301f; --warn:#e5b04a; --warnbg:#35290e; --bad:#f08a80; --badbg:#3a1d1a;
+    --c0:#6e9bff; --c1:#f0914e;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1280px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:20px;margin:0 0 2px}
+h3{font-size:13px;margin:0 0 6px;font-weight:600}
+.mute{color:var(--mute)}
+.meta{color:var(--mute);font-size:13px;margin-bottom:14px}
+.banner{background:var(--warnbg);color:var(--warn);padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:13px}
+.bar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:end;margin-bottom:12px}
+.bar label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mute)}
+.bar label.chk{flex-direction:row;align-items:center;gap:6px;color:var(--ink);font-size:13px;padding-bottom:6px}
+input[type=text],input[type=number],select{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit;width:110px}
+.spacer{flex:1}
+button{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font:inherit;cursor:pointer}
+button:hover{background:var(--hover)}
+.tablewrap{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th,td{padding:7px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line)}
+th.l,td.l{text-align:left}
+th{font-size:12px;font-weight:600;color:var(--mute);cursor:pointer;user-select:none;position:sticky;top:0;background:var(--panel)}
+th.nosort{cursor:default}
+th .ar{display:inline-block;width:10px}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:var(--hover)}
+tbody tr.sel{background:var(--sel)}
+tbody tr:last-child td{border-bottom:0}
+td.strong{font-weight:600}
+td.good{color:var(--good);font-weight:600}
+td.warn{color:var(--warn)}
+td.bad{color:var(--bad)}
+.dot{color:var(--good)}
+.tag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:12px}
+.tag.bad{background:var(--badbg);color:var(--bad)}
+.empty{padding:28px;text-align:center;color:var(--mute)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-top:16px}
+.panel .head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:18px}
+svg text{font:11px system-ui,sans-serif;fill:var(--mute)}
+svg .grid{stroke:var(--line);stroke-width:1}
+svg .ln{fill:none;stroke-width:2;stroke-linejoin:round}
+.legend{margin-top:18px;font-size:12px;color:var(--mute);line-height:1.6}
+.legend b{color:var(--ink);font-weight:600}
+details{margin-top:12px;font-size:13px}
+</style>
+</head>
+<body>
+<main>
+  <h1>CSP Screener</h1>
+  <div class="meta" id="meta"></div>
+  <div id="banners"></div>
+
+  <div class="bar">
+    <label>Ticker<input type="text" id="f-q" placeholder="e.g. AMD"></label>
+    <label>Expiry<select id="f-exp"><option value="">All</option></select></label>
+    <label>Min ann. ROC %<input type="number" id="f-roc" min="0" step="1" placeholder="0"></label>
+    <label>Min IV Rank<input type="number" id="f-ivr" min="0" max="100" step="5" placeholder="0"></label>
+    <label class="chk"><input type="checkbox" id="f-pass"> Passing only</label>
+    <label class="chk"><input type="checkbox" id="f-earn"> Hide earnings in window</label>
+    <label class="chk"><input type="checkbox" id="f-liq"> Liquid only</label>
+    <span class="spacer"></span>
+    <span class="mute" id="count"></span>
+    <button id="csv">Download CSV</button>
+  </div>
+
+  <div class="tablewrap"><table id="tbl"><thead></thead><tbody></tbody></table></div>
+
+  <div class="panel" id="hist" hidden></div>
+
+  <div class="legend" id="legend"></div>
+  <details id="errs" hidden><summary class="mute">Skipped / errors</summary><ul id="errlist"></ul></details>
+</main>
+
+<script>
+const DATA = /*__DATA__*/null;
+const D = DATA, C = D.config;
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const num = (v, d = 2) => v == null ? '–' : Number(v).toFixed(d);
+const pct = (v, d = 1) => v == null ? '–' : Number(v).toFixed(d) + '%';
+
+// ---- columns ----------------------------------------------------------
+const cols = [
+  {k:'passes', label:'', tip:'Passes: liquid, IV rich, no earnings in window', html:r => r.passes ? '<span class="dot">●</span>' : ''},
+  {k:'symbol', label:'Ticker', left:true, html:r => `<b>${esc(r.symbol)}</b>`},
+  {k:'spot', label:'Spot', html:r => num(r.spot)},
+  {k:'expiry', label:'Expiry', html:r => `${r.expiry.slice(5)} <span class="mute">${r.dte}d</span>`},
+  {k:'strike', label:'Strike', html:r => num(r.strike, r.strike % 1 ? 2 : 0)},
+  {k:'delta', label:'Δ', html:r => num(r.delta)},
+  {k:'mid', label:'Mid', html:r => num(r.mid)},
+  {k:'roc', label:'Ann. ROC', tip:'mid / strike × 365 / DTE', cls:() => 'strong', html:r => pct(r.roc)},
+  {k:'cushion_pct', label:'Cushion', tip:'(spot − strike) / spot', html:r => pct(r.cushion_pct)},
+  {k:'em_mult', label:'vs EM', tip:'Cushion in units of the 1σ expected move (ATM IV). ≥ 1× = strike is outside the expected move.',
+    cls:r => r.em_mult == null ? '' : r.em_mult >= 1 ? 'good' : 'warn', html:r => r.em_mult == null ? '–' : num(r.em_mult) + '×'},
+  {k:'ref_iv', label:'ATM IV', tip:'ATM implied vol of the expiry nearest 21 DTE', html:r => r.ref_iv == null ? '–' : pct(r.ref_iv * 100, 0)},
+  {k:'ivr', label:'IV Rank', tip:r => r.ivr == null ? `${r.ivr_n} of ${C.min_history} days of history needed` : `rank over ${r.ivr_n} days`,
+    cls:r => r.ivr != null && r.ivr >= C.ivr_min ? 'good' : '', html:r => r.ivr == null ? '<span class="mute">–</span>' : num(r.ivr, 0)},
+  {k:'iv_rv', label:'IV/RV', tip:'ATM IV ÷ 30-day realized vol', cls:r => r.iv_rv != null && r.iv_rv >= C.ivrv_min ? 'good' : '', html:r => num(r.iv_rv)},
+  {k:'spread_pct', label:'Spread', tip:'bid-ask as % of mid', cls:r => r.spread_pct == null || r.spread_pct > C.max_spread ? 'bad' : '', html:r => pct(r.spread_pct, 1)},
+  {k:'oi', label:'OI', cls:r => r.oi < C.min_oi ? 'bad' : '', html:r => r.oi.toLocaleString()},
+  {k:'earnings', label:'Earnings', tip:'Earnings date on/before expiry',
+    html:r => r.earnings ? `<span class="tag bad">${r.earnings.slice(5)}</span>` : (r.earn_known ? '<span class="mute">–</span>' : '<span class="mute" title="No earnings source configured">?</span>')},
+  {k:'spark', label:'IV trend', nosort:true, html:r => spark(r.symbol)},
+];
+
+// ---- state ------------------------------------------------------------
+let sort = {k:'roc', dir:-1};
+let selected = null;
+
+function spark(sym) {
+  const h = (D.history[sym] || []).filter(p => p.iv != null).slice(-60);
+  if (h.length < 2) return '<span class="mute">–</span>';
+  const w = 72, ht = 20, vs = h.map(p => p.iv), lo = Math.min(...vs), hi = Math.max(...vs);
+  const pts = vs.map((v, i) => `${(i / (vs.length - 1) * w).toFixed(1)},${(ht - 2 - (v - lo) / ((hi - lo) || 1) * (ht - 4)).toFixed(1)}`);
+  const last = pts[pts.length - 1].split(',');
+  return `<svg width="${w}" height="${ht}" viewBox="0 0 ${w} ${ht}"><polyline points="${pts.join(' ')}" fill="none" stroke="var(--c0)" stroke-width="1.5"/><circle cx="${last[0]}" cy="${last[1]}" r="2" fill="var(--c0)"/></svg>`;
+}
+
+function filtered() {
+  const q = $('#f-q').value.trim().toUpperCase(), exp = $('#f-exp').value;
+  const roc = parseFloat($('#f-roc').value) || 0, ivr = parseFloat($('#f-ivr').value) || 0;
+  return D.rows.filter(r =>
+    (!q || r.symbol.includes(q)) && (!exp || r.expiry === exp) && r.roc >= roc &&
+    (!ivr || (r.ivr != null && r.ivr >= ivr)) &&
+    (!$('#f-pass').checked || r.passes) && (!$('#f-earn').checked || !r.earnings) &&
+    (!$('#f-liq').checked || r.liquid));
+}
+
+function render() {
+  const rows = filtered().sort((a, b) => {
+    const av = a[sort.k], bv = b[sort.k];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    return (av > bv ? 1 : av < bv ? -1 : 0) * sort.dir || (b.roc - a.roc);
+  });
+  $('#tbl thead').innerHTML = '<tr>' + cols.map(c =>
+    `<th class="${c.left ? 'l' : ''} ${c.nosort ? 'nosort' : ''}" data-k="${c.k}" title="${esc(typeof c.tip === 'string' ? c.tip : '')}">${c.label}<span class="ar">${sort.k === c.k ? (sort.dir > 0 ? '▲' : '▼') : ''}</span></th>`).join('') + '</tr>';
+  $('#tbl tbody').innerHTML = rows.length ? rows.map((r, i) =>
+    `<tr data-sym="${esc(r.symbol)}" class="${selected === r.symbol ? 'sel' : ''}">` + cols.map(c => {
+      const cls = [c.left ? 'l' : '', c.cls ? c.cls(r) : ''].join(' ');
+      const tip = typeof c.tip === 'function' ? c.tip(r) : '';
+      return `<td class="${cls}"${tip ? ` title="${esc(tip)}"` : ''}>${c.html(r)}</td>`;
+    }).join('') + '</tr>').join('') :
+    `<tr><td colspan="${cols.length}" class="empty">Nothing matches these filters.</td></tr>`;
+  $('#count').textContent = `${rows.length} of ${D.rows.length} rows · ${D.rows.filter(r => r.passes).length} passing`;
+}
+
+// ---- history panel ----------------------------------------------------
+function chart(title, series, fmt) {
+  const all = series.flatMap(s => s.pts);
+  if (all.length < 2) return `<div><h3>${title}</h3><p class="mute">Not enough history yet. It builds one point per weekday the job runs.</p></div>`;
+  const W = 560, H = 190, L = 42, R = 70, T = 10, B = 22;
+  let x0 = Math.min(...all.map(p => p.t)), x1 = Math.max(...all.map(p => p.t));
+  let y0 = Math.min(...all.map(p => p.v)), y1 = Math.max(...all.map(p => p.v));
+  const pad = (y1 - y0) * 0.12 || Math.abs(y1) * 0.1 || 1; y0 -= pad; y1 += pad;
+  const X = t => L + (t - x0) / ((x1 - x0) || 1) * (W - L - R), Y = v => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);
+  let g = '';
+  for (let i = 0; i < 4; i++) {
+    const v = y0 + (y1 - y0) * i / 3;
+    g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${L - 6}" y="${Y(v) + 4}" text-anchor="end">${fmt(v)}</text>`;
+  }
+  const d = t => new Date(t).toISOString().slice(0, 10);
+  g += `<text x="${L}" y="${H - 6}">${d(x0)}</text><text x="${W - R}" y="${H - 6}" text-anchor="end">${d(x1)}</text>`;
+  let lastY = [];
+  series.forEach((s, i) => {
+    if (!s.pts.length) return;
+    g += `<path class="ln" stroke="var(--c${i})" d="${s.pts.map((p, j) => (j ? 'L' : 'M') + X(p.t).toFixed(1) + ' ' + Y(p.v).toFixed(1)).join('')}"/>`;
+    const p = s.pts[s.pts.length - 1];
+    let ly = Y(p.v) + 4;
+    lastY.forEach(o => { if (Math.abs(ly - o) < 13) ly = o + 13; });
+    lastY.push(ly);
+    g += `<circle cx="${X(p.t)}" cy="${Y(p.v)}" r="3" fill="var(--c${i})"/><text x="${W - R + 8}" y="${ly}" style="fill:var(--c${i})">${s.name} ${fmt(p.v)}</text>`;
+  });
+  return `<div><h3>${title}</h3><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(title)}">${g}</svg></div>`;
+}
+
+function showHistory(sym) {
+  selected = sym;
+  const h = D.history[sym] || [];
+  const mk = key => h.filter(p => p[key] != null).map(p => ({t: Date.parse(p.d), v: p[key]}));
+  const ivs = h.map(p => p.iv).filter(v => v != null);
+  const r = D.rows.find(x => x.symbol === sym);
+  $('#hist').hidden = false;
+  $('#hist').innerHTML = `<div class="head"><b style="font-size:15px">${esc(sym)} history</b>
+    <span class="mute">${ivs.length} day${ivs.length === 1 ? '' : 's'} of IV history${ivs.length ? ` · range ${pct(Math.min(...ivs) * 100, 0)}–${pct(Math.max(...ivs) * 100, 0)}` : ''}${r && r.ivr != null ? ` · IV Rank ${num(r.ivr, 0)}` : ''}</span></div>
+    <div class="charts">
+      ${chart('ATM IV vs 30-day realized vol', [{name: 'IV', pts: mk('iv')}, {name: 'RV', pts: mk('rv')}], v => (v * 100).toFixed(0) + '%')}
+      ${chart(`Best annualized ROC at ≤${C.delta.toFixed(2)}Δ`, [{name: 'ROC', pts: mk('roc')}], v => v.toFixed(0) + '%')}
+    </div>`;
+  render();
+}
+
+// ---- wiring -----------------------------------------------------------
+function csv() {
+  const keys = ['symbol','spot','expiry','dte','strike','delta','bid','ask','mid','premium','collateral','roc','cushion_pct','em_mult','ref_iv','ivr','iv_rv','spread_pct','oi','earnings','passes'];
+  const rows = filtered().sort((a, b) => b.roc - a.roc);
+  const body = [keys.join(',')].concat(rows.map(r => keys.map(k => r[k] == null ? '' : (typeof r[k] === 'number' ? +r[k].toFixed(4) : r[k])).join(',')));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([body.join('\n')], {type: 'text/csv'}));
+  a.download = 'csp-screen-' + D.generated.slice(0, 10) + '.csv';
+  a.click();
+}
+
+function init() {
+  $('#meta').textContent = `Updated ${D.generated} · short put ≤ ${C.delta.toFixed(2)}Δ · ${C.dte_min}–${C.dte_max} DTE · ${new Set(D.rows.map(r => r.symbol)).size} tickers`;
+  const b = [];
+  if (D.mock) b.push('Mock data: synthetic numbers for testing the page, not market data.');
+  if (!D.recorded) b.push('Weekend run: IV history was not updated.');
+  if (!D.earnings_source) b.push('No earnings source configured, so the Earnings column shows "?". Add a Finnhub key to enable it.');
+  $('#banners').innerHTML = b.map(t => `<div class="banner">${esc(t)}</div>`).join('');
+  [...new Set(D.rows.map(r => r.expiry))].sort().forEach(e => $('#f-exp').insertAdjacentHTML('beforeend', `<option>${e}</option>`));
+  $('#legend').innerHTML = `<b>●</b> = passes all of: spread ≤ ${C.max_spread}% and OI ≥ ${C.min_oi}; IV Rank ≥ ${C.ivr_min} (or, until ${C.min_history} days of history exist, IV/RV ≥ ${C.ivrv_min}); no earnings before expiry.<br>
+    <b>Ann. ROC</b> uses the mid price. <b>vs EM</b> = how many 1σ expected moves the strike sits below spot. Click a row for that ticker's IV history.`;
+  if (D.errors.length) { $('#errs').hidden = false; $('#errlist').innerHTML = D.errors.map(e => `<li>${esc(e)}</li>`).join(''); }
+
+  document.querySelectorAll('.bar input, .bar select').forEach(el => el.addEventListener('input', render));
+  $('#csv').addEventListener('click', csv);
+  $('#tbl thead').addEventListener('click', e => {
+    const th = e.target.closest('th'); if (!th || th.classList.contains('nosort')) return;
+    const k = th.dataset.k;
+    sort = {k, dir: sort.k === k ? -sort.dir : (k === 'symbol' || k === 'expiry' ? 1 : -1)};
+    render();
+  });
+  $('#tbl tbody').addEventListener('click', e => { const tr = e.target.closest('tr[data-sym]'); if (tr) showHistory(tr.dataset.sym); });
+  render();
+}
+init();
+</script>
+</body>
+</html>

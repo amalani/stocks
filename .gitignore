@@ -1,3 +1,12 @@
 # Private token file
 
 Token.gs
+
+# Secrets and local config (any folder)
+.env
+.env.*
+!.env.example
+token.txt
+finnhub.txt
+*.key
+*.pem
