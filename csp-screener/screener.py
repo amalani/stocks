@@ -338,7 +338,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--tickers", default=str(HERE / "watchlist.txt"))
     ap.add_argument("--delta", type=float, default=0.20, help="max |delta| of the short put (default 0.20)")
-    ap.add_argument("--dte-min", type=int, default=14)
+    ap.add_argument("--dte-min", type=int, default=1)
     ap.add_argument("--dte-max", type=int, default=25)
     ap.add_argument("--min-oi", type=int, default=100)
     ap.add_argument("--max-spread", type=float, default=10.0, help="max bid-ask spread as %% of mid")

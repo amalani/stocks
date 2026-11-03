@@ -2,12 +2,12 @@
 
 ## What this is
 A daily/on-demand screener for cash-secured puts. For each ticker in `watchlist.txt` it finds the short put
-closest to (but not above) 0.20 delta in every expiration 14-25 DTE out, computes premium / IV / liquidity /
+closest to (but not above) 0.20 delta in every expiration 1-25 DTE out (this week through ~3.5 weeks), computes premium / IV / liquidity /
 earnings metrics, stores daily IV history in SQLite, and renders a static page for a human to eyeball.
 Owner sells CSPs for premium and wants to avoid assignment; the page exists to spot where IV is rich.
 
 Owner's trading rules the screener encodes (change via CLI flags, not by editing logic):
-- Delta ≤ 0.20, ~2-3 weeks out. Mid price (not bid) is the premium input; limit orders.
+- Delta ≤ 0.20, same week through ~3 weeks out. Mid price (not bid) is the premium input; limit orders.
 - Annualized ROC = mid / strike × 365 / DTE is the primary comparison metric.
 - IV Rank > 50 preferred. Avoid new entries into earnings windows.
 

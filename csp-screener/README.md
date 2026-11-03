@@ -1,6 +1,6 @@
 # CSP screener
 
-Scans a watchlist for cash-secured-put candidates at ≤ 0.20 delta, 14–25 DTE, and renders a
+Scans a watchlist for cash-secured-put candidates at ≤ 0.20 delta, 1–25 DTE, and renders a
 sortable/filterable page (`public/index.html`) with per-ticker IV history.
 
 Stdlib-only Python 3.9+. Uses the same Tradier endpoints as `options-tracker-sheet/`.
