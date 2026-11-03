@@ -4,19 +4,34 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CSP Screener</title>
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
 <style>
 :root{
   --bg:#f6f6f3; --panel:#ffffff; --ink:#1c2024; --mute:#6a717b; --line:#e3e4e0; --hover:#f0f1ed; --sel:#e8eefc;
   --good:#136c43; --goodbg:#e3f3ea; --warn:#8a5a00; --warnbg:#fff1cf; --bad:#a82a1f; --badbg:#fbe7e4;
   --c0:#2457d6; --c1:#c2570c;
+  color-scheme:light;
 }
 @media (prefers-color-scheme: dark){
-  :root{
+  :root:not([data-theme]){
     --bg:#14161a; --panel:#1b1e23; --ink:#e7e9ec; --mute:#98a0ab; --line:#2b3037; --hover:#222630; --sel:#1f2b45;
     --good:#58c58b; --goodbg:#16301f; --warn:#e5b04a; --warnbg:#35290e; --bad:#f08a80; --badbg:#3a1d1a;
     --c0:#6e9bff; --c1:#f0914e;
+    color-scheme:dark;
   }
 }
+:root[data-theme=dark]{
+    --bg:#14161a; --panel:#1b1e23; --ink:#e7e9ec; --mute:#98a0ab; --line:#2b3037; --hover:#222630; --sel:#1f2b45;
+    --good:#58c58b; --goodbg:#16301f; --warn:#e5b04a; --warnbg:#35290e; --bad:#f08a80; --badbg:#3a1d1a;
+    --c0:#6e9bff; --c1:#f0914e;
+    color-scheme:dark;
+}
+:root[data-theme=light]{color-scheme:light}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.theme{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-top:4px}
+.theme button{border:0;border-radius:0;padding:4px 10px;font-size:12px;color:var(--mute)}
+.theme button+button{border-left:1px solid var(--line)}
+.theme button.on{background:var(--sel);color:var(--ink);font-weight:600}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
 main{max-width:1280px;margin:0 auto;padding:20px 16px 48px}
@@ -64,7 +79,8 @@ details{margin-top:12px;font-size:13px}
 </head>
 <body>
 <main>
-  <h1>CSP Screener</h1>
+  <div class="top"><h1>CSP Screener</h1>
+    <div class="theme" id="theme"><button data-t="light">Light</button><button data-t="system">System</button><button data-t="dark">Dark</button></div></div>
   <div class="meta" id="meta"></div>
   <div id="banners"></div>
 
@@ -93,6 +109,18 @@ details{margin-top:12px;font-size:13px}
 const DATA = /*__DATA__*/null;
 const D = DATA, C = D.config;
 const $ = s => document.querySelector(s);
+(function(){
+  const root = document.documentElement;
+  const cur = () => root.dataset.theme || 'system';
+  const mark = () => document.querySelectorAll('#theme button').forEach(b => b.classList.toggle('on', b.dataset.t === cur()));
+  document.querySelectorAll('#theme button').forEach(b => b.onclick = () => {
+    const t = b.dataset.t;
+    if (t === 'system') delete root.dataset.theme; else root.dataset.theme = t;
+    try { t === 'system' ? localStorage.removeItem('theme') : localStorage.setItem('theme', t); } catch (e) {}
+    mark();
+  });
+  mark();
+})();
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const num = (v, d = 2) => v == null ? '–' : Number(v).toFixed(d);
 const pct = (v, d = 1) => v == null ? '–' : Number(v).toFixed(d) + '%';
