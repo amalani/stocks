@@ -10,3 +10,6 @@ token.txt
 finnhub.txt
 *.key
 *.pem
+
+# macOS
+.DS_Store
