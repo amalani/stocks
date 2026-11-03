@@ -46,12 +46,15 @@ payload JSON → `template.html`.
 - One bad ticker must not kill the run; errors are collected and shown at the bottom of the page.
 
 ## Status
-Built and verified only against `--mock` (page renders, filters/sort/history charts work, re-runs are idempotent).
-**Not yet run against live Tradier.** First live run checklist:
-1. `.env` has a valid token (sandbox needs `TRADIER_BASE_URL`; sandbox data is delayed and may lack greeks).
-2. Rows appear for each ticker; delta/IV values look sane vs the Tradier/broker chain; no ticker errors.
-3. Spot used is `last` (falls back to close/prevclose), so check it after hours.
-4. Finnhub earnings call (`finnhub_earnings`) is untested; verify the response shape and rate limiting.
+Verified against `--mock` (page renders, filters/sort/history charts work, re-runs are idempotent) and with a first
+live run on 2026-11-03 (Tradier + Finnhub tokens in `.env`): 7 tickers, 19 rows, no ticker errors, deltas 0.15-0.20,
+IVs plausible, Finnhub earnings dates returned (AMD, NVDA). IV Rank is "–" until history accumulates.
+Still to check:
+1. Delta/IV values against the broker chain (only eyeballed for sanity so far).
+2. Spot used is `last` (falls back to close/prevclose), so check it after hours.
+3. Tickers with blank earnings (MU, MSFT, ...): confirm that means none in the window, not a missed lookup.
+4. Thin non-standard expiries (e.g. Wed 11-18) show OI 0 and 25-40% spreads yet can top the ROC ranking; consider a
+   min-OI filter or a flag.
 
 ## Ideas, roughly by value
 - Backfill `iv_daily` from Barchart / Market Chameleon history so IV Rank works from day one.
