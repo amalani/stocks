@@ -1,0 +1,18 @@
+# NAS deployment: nginx serves public/; the screener runs as a one-shot job.
+#   First time:  docker compose run --rm screener && docker compose up -d web
+#   Each run:    docker compose run --rm screener        (schedule this; see README)
+services:
+  web:
+    image: nginx:alpine
+    ports: ["9700:80"]                      # point the Cloudflare tunnel here
+    volumes: ["./public:/usr/share/nginx/html:ro"]   # only public/ is exposed, never .env or data/
+    restart: unless-stopped
+
+  screener:
+    image: python:3.12-slim
+    working_dir: /app
+    volumes: ["./:/app"]
+    env_file: .env                          # TRADIER_TOKEN etc. stay on the NAS
+    environment: { TZ: America/New_York }
+    command: sh -c "pip install -q --disable-pip-version-check tzdata && python screener.py"
+    profiles: ["job"]                       # not started by `docker compose up`

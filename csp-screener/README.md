@@ -43,6 +43,28 @@ CRON_TZ=America/New_York
 Serve `public/` from your home server (nginx/Caddy static dir, or `python3 -m http.server 8080 -d public`).
 On-demand refresh = run `python3 screener.py` again. Re-runs on the same day overwrite that day's history row.
 
+## Docker on a NAS + Cloudflare tunnel
+
+`docker-compose.yml` runs nginx (serves `public/` only) and the screener as a one-shot job. Secrets stay in `.env`
+on the NAS; nginx never sees them.
+
+1. Copy this folder to the NAS and create `.env` (see Setup).
+2. First run, then start the web server:
+   ```
+   docker compose run --rm screener
+   docker compose up -d web
+   ```
+3. Cloudflare Zero Trust, existing tunnel: add a public hostname (e.g. `screener.yourdomain.com`) pointing to
+   `http://<nas-ip>:9700` (or `http://web:80` if `cloudflared` is on the same compose network).
+4. **Put Cloudflare Access in front of it** (Access, Applications, Self-hosted, allow only your email). Otherwise
+   anyone with the URL can see your watchlist and strikes.
+5. Schedule `docker compose run --rm screener` in the NAS task scheduler: weekdays 1:30pm Pacific (= 4:30pm ET;
+   Pacific and Eastern are always 3 hours apart). Assumes the NAS clock is on Pacific time.
+6. On-demand refresh: run the same command over SSH. The page is static, so there is no refresh button.
+
+Notes: the job `pip install`s `tzdata` each run (slim Python images may lack timezone data); bake it into a small
+Dockerfile if the extra seconds bother you. Saved per-run pages in `public/runs/` are served too.
+
 ## What the columns mean
 
 - **Ann. ROC**: mid / strike × 365 / DTE. One row per expiry in the window, using the highest-delta put still ≤ target.
