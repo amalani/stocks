@@ -4,17 +4,6 @@
 # Optional own price (price you would be happy to own it at) after @, for the Wheel tab:
 #   AMD 0.30 @480    MU @200
 # Or keep these in a Google Sheet and set WATCHLIST_URL in .env (see README); the sheet wins when reachable.
-AMD
 AMZN
 COST
-GOOGL
 MSFT
-MU
-NVDA
-DELL
-GOOG
-META
-SNDK
-TSLA
-WDC
-XSP
