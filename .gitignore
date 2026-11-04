@@ -11,5 +11,8 @@ finnhub.txt
 *.key
 *.pem
 
+# Claude Code local settings
+.claude/settings.local.json
+
 # macOS
 .DS_Store
