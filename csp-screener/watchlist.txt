@@ -1,8 +1,20 @@
-# One ticker per line. '#' starts a comment. Starter list: edit freely (10-20 names).
+# One ticker per line. '#' starts a comment. Edit freely (10-20 names).
+# Optional per-ticker max put delta after the ticker (default is --delta, 0.20), e.g.:
+#   AMD 0.30      <- names you are happy to be assigned on
+# Optional own price (price you would be happy to own it at) after @, for the Wheel tab:
+#   AMD 0.30 @480    MU @200
+# Or keep these in a Google Sheet and set WATCHLIST_URL in .env (see README); the sheet wins when reachable.
 AMD
-MU
+AMZN
 COST
 GOOGL
-NVDA
 MSFT
-AMZN
+MU
+NVDA
+DELL
+GOOG
+META
+SNDK
+TSLA
+WDC
+XSP

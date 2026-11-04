@@ -10,8 +10,16 @@ Stdlib-only Python 3.9+. Uses the same Tradier endpoints as `options-tracker-she
 1. `cp .env.example .env` and fill in `TRADIER_TOKEN`. `.env` is gitignored (real environment
    variables also work and take priority). Sandbox users: also set
    `TRADIER_BASE_URL=https://sandbox.tradier.com/v1`.
-2. Edit `watchlist.txt` (10–20 tickers).
-3. Optional, for the Earnings column: free key from finnhub.io as `FINNHUB_KEY` in `.env`.
+2. Edit `watchlist.txt` (10–20 tickers). Optionally give a ticker its own max put delta, e.g. `AMD 0.30` for a name
+   you are happy to be assigned on (default 0.20). Clicking a row on the page shows the neighbouring strikes at that expiry.
+   Add `@price` for the price you would be happy to own it at (`AMD 0.30 @480`); those tickers get the **Wheel** tab.
+3. Optional: keep the watchlist in a Google Sheet instead. Make a tab "Screener Watchlist" with columns
+   `Ticker | Max delta | Own price` (blanks use defaults; only tickers and prices in that tab). Import
+   `screener-watchlist-import.csv` (File, Import, Upload, "Insert new sheet") to start from the current list, then File, Share,
+   Publish to web, pick that tab, format CSV. Put the URL in `.env` as `WATCHLIST_URL`. The URL is unauthenticated,
+   so keep it private (unpublish if it leaks). Publishing caches ~5 min. If the sheet is unreachable the run falls back
+   to `watchlist.txt` and the page says so. `--tickers FILE` bypasses the sheet.
+4. Optional, for the Earnings column: free key from finnhub.io as `FINNHUB_KEY` in `.env`.
    Without it, earnings show "?" and are not used to filter.
 
 ```
@@ -72,8 +80,15 @@ Dockerfile if the extra seconds bother you. Saved per-run pages in `public/runs/
 - **IV Rank**: where today's ATM IV (expiry nearest 21 DTE) sits in its own min–max range from `data/screener.db`.
   Tradier has no IV history, so this fills in over time and shows "–" until 20 days exist.
   Until then the ● pass test uses IV/RV (ATM IV ÷ 30-day realized vol) ≥ 1.2.
-- **●** = spread ≤ 10% and OI ≥ 100, IV rich (above), and no earnings before expiry.
+- **●** = spread ≤ 10% and OI ≥ 100, IV rich (above), ann. ROC ≥ `--min-roc` (default 25%), and no earnings before expiry.
+  Every row gets a one-line reason (hover its ● or open it): Skip (earnings / thin market), Weak (IV not elevated),
+  Thin (pays under the hurdle) or Worth a look. The "Top opportunities" strip shows the best ● expiry per ticker
+  (nearest 14 DTE, so very short expiries don't win on inflated annualized ROC).
   Thresholds are CLI flags.
+
+- **Wheel tab**: for tickers with an own price, the highest put strike at or below min(own price, spot) at each expiry.
+  **Net cost** = strike minus premium (your per-share cost if assigned); **Assign Δ** is roughly the assignment chance.
+  ● needs liquidity, the ROC hurdle and no earnings; IV richness is informational only.
 
 ## Notes
 

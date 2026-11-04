@@ -2,11 +2,13 @@
 """
 CSP screener.
 
-For every ticker in watchlist.txt, finds the short put closest to (but not
-above) TARGET delta in each expiration inside the DTE window, computes
-premium / IV / liquidity / earnings metrics, keeps a daily IV history in
-SQLite (for IV Rank), and renders a static page: public/index.html
-(+ latest.json, latest.csv).
+For every ticker on the watchlist (a published Google Sheet CSV via WATCHLIST_URL
+in .env, else watchlist.txt), finds the short put closest to (but not above)
+TARGET delta in each expiration inside the DTE window, computes premium / IV /
+liquidity / earnings metrics, keeps a daily IV history in SQLite (for IV Rank),
+and renders a static page: public/index.html (+ latest.json, latest.csv).
+Tickers with an "own price" also get a wheel view: the strike at/below the price
+you would be happy to own the stock at.
 
     python3 screener.py              # live; needs TRADIER_TOKEN env var or token.txt
     python3 screener.py --mock       # synthetic data, no API calls, separate DB
@@ -15,10 +17,12 @@ Stdlib only (Python 3.9+).
 """
 import argparse
 import csv
+import io
 import json
 import math
 import os
 import random
+import re
 import sqlite3
 import sys
 import time
@@ -223,30 +227,198 @@ def finnhub_earnings(key, sym, start, end):
         return None
 
 
-def screen_symbol(api, sym, spot, cfg, today, earnings, hist_iv):
+LADDER_MIN_DELTA, LADDER_MAX_DELTA, LADDER_SIZE = 0.05, 0.40, 12
+
+
+def build_ladder(chain, spot, dte, a_iv, target, center=None):
+    """Puts around the target delta (or, with `center`, around a strike) for one expiry, so the page can show
+    neighbouring strikes."""
+    em = spot * a_iv * math.sqrt(dte / 365) if a_iv else None
+    lo, hi = (0.02, 0.60) if center is not None else (LADDER_MIN_DELTA, LADDER_MAX_DELTA)
+    out = []
+    for o in chain:
+        if o.get("option_type") != "put" or not o.get("bid"):
+            continue
+        d = (o.get("greeks") or {}).get("delta")
+        if d is None or not (lo <= abs(float(d)) <= hi):
+            continue
+        bid, ask = float(o["bid"]), float(o.get("ask") or 0)
+        mid = (bid + ask) / 2 if ask else bid
+        K = float(o["strike"])
+        if mid <= 0 or K <= 0:
+            continue
+        out.append(dict(
+            strike=K, delta=round(abs(float(d)), 4), bid=bid, ask=ask, mid=round(mid, 3),
+            roc=round(mid / K * 365 / dte * 100, 2), cushion_pct=round((spot - K) / spot * 100, 2),
+            em_mult=round((spot - K) / em, 3) if em else None,
+            spread_pct=round((ask - bid) / mid * 100, 2) if ask else None,
+            oi=int(o.get("open_interest") or 0),
+            iv=norm_iv((o.get("greeks") or {}).get("mid_iv"))))
+    if center is not None:
+        out = sorted(out, key=lambda x: abs(x["strike"] - center))[:LADDER_SIZE]   # nearest to the strike
+    else:
+        out = sorted(out, key=lambda x: abs(x["delta"] - target))[:LADDER_SIZE]    # nearest to target
+    return sorted(out, key=lambda x: x["delta"])
+
+
+# ---- watchlist: sheet (published CSV) or text file --------------------------
+TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
+
+
+def parse_num(s):
+    """'0.30', '30%', '$1,200' -> float; blank -> None. Raises ValueError on junk."""
+    s = str(s).strip().replace("$", "").replace(",", "")
+    if not s:
+        return None
+    return float(s[:-1]) / 100 if s.endswith("%") else float(s)
+
+
+def _check(sym, delta, own):
+    if delta is not None and not (0 < delta < 1):
+        raise ValueError(f"{sym}: max delta must be between 0 and 1 (got {delta})")
+    if own is not None and own <= 0:
+        raise ValueError(f"{sym}: own price must be positive (got {own})")
+
+
+def parse_watchlist_lines(lines):
+    """Text format, one ticker per line: AMD | AMD 0.30 | AMD @480 | AMD 0.30 @480   ('#' = comment).
+    0.30 is the max put delta for that ticker; @480 is the price you would be happy to own it at."""
+    wl = {}
+    for line in lines:
+        parts = line.split("#")[0].upper().split()
+        if not parts:
+            continue
+        sym = parts[0]
+        if not TICKER_RE.match(sym):
+            raise ValueError(f"bad ticker {parts[0]!r}")
+        if sym in wl:
+            continue
+        delta = own = None
+        for p in parts[1:]:
+            try:
+                if p.startswith("@"):
+                    own = parse_num(p[1:])
+                else:
+                    delta = parse_num(p)
+            except ValueError:
+                raise ValueError(f"{sym}: can't read {p!r} (use e.g. 'AMD 0.30 @480')")
+        _check(sym, delta, own)
+        wl[sym] = {"delta": delta, "own": own}
+    return wl
+
+
+def parse_watchlist_csv(text):
+    """Published Google Sheet CSV. Header row names the columns: Ticker, Max delta, Own price
+    (matched loosely: 'ticker'/'symbol', 'delta', 'own'/'buy'/'hold'/'price'). Without a header the order is
+    ticker, delta, own price. Bad rows are skipped with a note rather than failing the run."""
+    rows = [r for r in csv.reader(io.StringIO(text)) if any(c.strip() for c in r)]
+    if not rows:
+        raise ValueError("sheet is empty")
+    head = [c.strip().lower() for c in rows[0]]
+
+    def col(*names):
+        return next((i for i, h in enumerate(head) if any(n in h for n in names)), None)
+
+    i_t = col("ticker", "symbol")
+    if i_t is None:
+        if not TICKER_RE.match(rows[0][0].strip().upper()):
+            raise ValueError("no Ticker column found in the sheet")
+        i_t, i_d, i_o, body = 0, 1, 2, rows
+    else:
+        i_d, i_o, body = col("delta"), col("own", "buy", "hold", "price"), rows[1:]
+    wl, notes = {}, []
+    for r in body:
+        cell = lambda i: r[i].strip() if i is not None and i < len(r) else ""
+        sym = cell(i_t).upper()
+        if not sym or sym in wl:
+            continue
+        if not TICKER_RE.match(sym):
+            notes.append(f"sheet: skipped {sym!r} (not a ticker)")
+            continue
+        try:
+            delta, own = parse_num(cell(i_d)), parse_num(cell(i_o))
+            _check(sym, delta, own)
+        except ValueError as ex:
+            notes.append(f"sheet: {ex}; using defaults for {sym}")
+            delta = own = None
+        wl[sym] = {"delta": delta, "own": own}
+    return wl, notes
+
+
+def load_watchlist(path, url):
+    """-> (watchlist dict, source label, notes). The sheet wins when a URL is given; if it can't be read we fall
+    back to the text file and say so on the page."""
+    notes, source = [], "file"
+    if url:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "csp-screener"})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                wl, notes = parse_watchlist_csv(r.read().decode("utf-8-sig"))
+            if wl:
+                return wl, "sheet", notes
+            notes.append("sheet watchlist had no tickers; using watchlist.txt")
+        except Exception as ex:   # never echo the URL itself
+            notes.append(f"couldn't read the sheet ({type(ex).__name__}: {ex}); using watchlist.txt")
+        source = "file (sheet unavailable)"
+    return parse_watchlist_lines(Path(path).read_text().splitlines()), source, notes
+
+
+def wheel_leg(chain, spot, dte, a_iv, own):
+    """The put you would sell to (maybe) buy at `own`: highest listed strike at or below min(own, spot) with a bid."""
+    cap = min(own, spot)
+    cands = [o for o in chain if o.get("option_type") == "put" and o.get("bid") and float(o["strike"]) <= cap]
+    if not cands:
+        return None
+    o = max(cands, key=lambda o: float(o["strike"]))
+    d = (o.get("greeks") or {}).get("delta")
+    bid, ask = float(o["bid"]), float(o.get("ask") or 0)
+    mid = (bid + ask) / 2 if ask else bid
+    K = float(o["strike"])
+    em = spot * a_iv * math.sqrt(dte / 365) if a_iv else None
+    return dict(
+        strike=K, delta=abs(float(d)) if d is not None else None, bid=bid, ask=ask, mid=mid,
+        spread_pct=(ask - bid) / mid * 100 if ask and mid > 0 else None,
+        oi=int(o.get("open_interest") or 0), volume=int(o.get("volume") or 0),
+        iv=norm_iv((o.get("greeks") or {}).get("mid_iv")),
+        roc=mid / K * 365 / dte * 100, cushion_pct=(spot - K) / spot * 100,
+        em_mult=(spot - K) / em if em else None, premium=mid * 100, collateral=K * 100,
+        net_cost=K - mid, net_below_spot_pct=(spot - (K - mid)) / spot * 100)
+
+
+def screen_symbol(api, sym, spot, cfg, today, earnings, hist_iv, target=None, own=None):
+    target = cfg.delta if target is None else target
     exps = []
     for e in api.expirations(sym):
         dte = (date.fromisoformat(e) - today).days
         if cfg.dte_min <= dte <= cfg.dte_max:
             exps.append((e, dte))
     if not exps:
-        return [], None, None
+        return [], [], None, None
 
     rv = realized_vol(api.closes(sym))
-    ref_iv, ref_gap, rows = None, 10 ** 9, []
+    ref_iv, ref_gap, rows, wheel = None, 10 ** 9, [], []
 
     for e, dte in exps:
         chain = api.chain(sym, e)
         a_iv = atm_iv(chain, spot)
         if a_iv and abs(dte - 21) < ref_gap:
             ref_iv, ref_gap = a_iv, abs(dte - 21)
+        earn = [d for d in (earnings or []) if today.isoformat() <= d <= e]
+
+        if own:   # wheel view: the strike at/below the price you'd be happy to own it at
+            w = wheel_leg(chain, spot, dte, a_iv, own)
+            if w:
+                w.update(symbol=sym, spot=spot, expiry=e, dte=dte, own_price=own, own_above_spot=own >= spot,
+                         atm_iv=a_iv, earnings=min(earn) if earn else None, earn_known=earnings is not None,
+                         ladder=build_ladder(chain, spot, dte, a_iv, 0, center=w["strike"]))
+                wheel.append(w)
 
         cands = []
         for o in chain:
             if o.get("option_type") != "put" or not o.get("bid"):
                 continue
             d = (o.get("greeks") or {}).get("delta")
-            if d is None or not (-cfg.delta <= float(d) < 0):
+            if d is None or not (-target <= float(d) < 0):
                 continue
             cands.append((abs(float(d)), o))
         if not cands:
@@ -257,9 +429,9 @@ def screen_symbol(api, sym, spot, cfg, today, earnings, hist_iv):
         mid = (bid + ask) / 2 if ask else bid
         K = float(o["strike"])
         em = spot * a_iv * math.sqrt(dte / 365) if a_iv else None
-        earn = [d for d in (earnings or []) if today.isoformat() <= d <= e]
         rows.append(dict(
-            symbol=sym, spot=spot, expiry=e, dte=dte, strike=K, delta=delta,
+            symbol=sym, spot=spot, expiry=e, dte=dte, strike=K, delta=delta, target_delta=target,
+            ladder=build_ladder(chain, spot, dte, a_iv, target),
             bid=bid, ask=ask, mid=mid,
             spread_pct=(ask - bid) / mid * 100 if ask and mid > 0 else None,
             oi=int(o.get("open_interest") or 0), volume=int(o.get("volume") or 0),
@@ -282,9 +454,18 @@ def screen_symbol(api, sym, spot, cfg, today, earnings, hist_iv):
                   and r["oi"] >= cfg.min_oi)
         # Rank when we have enough history, otherwise fall back to IV vs realized.
         rich = (ivr >= cfg.ivr_min) if ivr is not None else (r["iv_rv"] is not None and r["iv_rv"] >= cfg.ivrv_min)
-        r["liquid"], r["rich"] = liquid, rich
-        r["passes"] = bool(liquid and rich and not r["earnings"])
-    return rows, ref_iv, rv
+        pays = r["roc"] >= cfg.min_roc
+        r["liquid"], r["rich"], r["pays"] = liquid, rich, pays
+        r["passes"] = bool(liquid and rich and pays and not r["earnings"])
+
+    for w in wheel:   # you are happy to own it, so IV richness is information here, not a requirement
+        w["ref_iv"], w["ivr"], w["ivr_n"] = ref_iv, ivr, n
+        w["rv30"] = rv
+        w["iv_rv"] = (ref_iv / rv) if (ref_iv and rv) else None
+        w["liquid"] = (w["spread_pct"] is not None and w["spread_pct"] <= cfg.max_spread and w["oi"] >= cfg.min_oi)
+        w["pays"] = w["roc"] >= cfg.min_roc
+        w["passes"] = bool(w["liquid"] and w["pays"] and not w["earnings"])
+    return rows, wheel, ref_iv, rv
 
 
 # --------------------------------------------------------------------------
@@ -336,14 +517,18 @@ def rerender(out):
 def main():
     load_env(HERE / ".env")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--tickers", default=str(HERE / "watchlist.txt"))
-    ap.add_argument("--delta", type=float, default=0.20, help="max |delta| of the short put (default 0.20)")
+    ap.add_argument("--tickers", default=None,
+                    help="watchlist text file (default watchlist.txt). Giving this skips WATCHLIST_URL, the "
+                         "published-sheet CSV set in .env")
+    ap.add_argument("--delta", type=float, default=0.20, help="default max |delta| of the short put (0.20); override per ticker in watchlist.txt, e.g. 'AMD 0.30'")
     ap.add_argument("--dte-min", type=int, default=1)
     ap.add_argument("--dte-max", type=int, default=25)
     ap.add_argument("--min-oi", type=int, default=100)
     ap.add_argument("--max-spread", type=float, default=10.0, help="max bid-ask spread as %% of mid")
     ap.add_argument("--ivr-min", type=float, default=50.0)
     ap.add_argument("--ivrv-min", type=float, default=1.2)
+    ap.add_argument("--min-roc", type=float, default=25.0,
+                    help="annualized ROC (%%) a put must pay to count as worth a look (default 25)")
     ap.add_argument("--min-history", type=int, default=20, help="days of IV history before IV Rank is shown")
     ap.add_argument("--out", default=None, help="output dir (default public/, or public-mock/ with --mock)")
     ap.add_argument("--db", default=None)
@@ -360,13 +545,20 @@ def main():
 
     now = datetime.now(ET)
     today = now.date()
-    symbols = []
-    for line in Path(cfg.tickers).read_text().splitlines():
-        line = line.split("#")[0].strip().upper()
-        if line and line not in symbols:
-            symbols.append(line)
+    # Watchlist: published Google Sheet CSV (WATCHLIST_URL) if set, else watchlist.txt (or --tickers FILE).
+    # Per ticker: optional max put delta and optional "own price" (what you'd be happy to pay for the stock).
+    try:
+        wl, wl_source, wl_notes = load_watchlist(cfg.tickers or HERE / "watchlist.txt",
+                                                 None if cfg.tickers else os.environ.get("WATCHLIST_URL"))
+    except (ValueError, OSError) as ex:
+        sys.exit(f"watchlist: {ex}")
+    symbols = list(wl)
+    deltas = {s: v["delta"] for s, v in wl.items() if v["delta"]}
+    owns = {s: v["own"] for s, v in wl.items() if v["own"]}
     if not symbols:
         sys.exit("watchlist is empty")
+    for n_ in wl_notes:
+        print(f"watchlist: {n_}", file=sys.stderr)
 
     db_path = Path(cfg.db) if cfg.db else HERE / "data" / ("mock.db" if cfg.mock else "screener.db")
     con = open_db(db_path)
@@ -385,7 +577,7 @@ def main():
         api = Tradier(token, os.environ.get("TRADIER_BASE_URL", "https://api.tradier.com/v1"))
 
     quotes = api.quotes(symbols)
-    rows, errors, ref = [], [], {}
+    rows, wheel_rows, errors, ref = [], [], [], {}
     for sym in symbols:
         try:
             q = quotes.get(sym)
@@ -398,10 +590,14 @@ def main():
             hist = [r[0] for r in con.execute(
                 "SELECT atm_iv FROM iv_daily WHERE symbol=? AND date<? ORDER BY date DESC LIMIT 252",
                 (sym, today.isoformat()))]
-            r, ref_iv, rv = screen_symbol(api, sym, spot, cfg, today, earnings, hist)
+            target = deltas.get(sym, cfg.delta)
+            r, w, ref_iv, rv = screen_symbol(api, sym, spot, cfg, today, earnings, hist, target, owns.get(sym))
             if not r:
-                errors.append(f"{sym}: no put at |delta| <= {cfg.delta} in {cfg.dte_min}-{cfg.dte_max} DTE")
+                errors.append(f"{sym}: no put at |delta| <= {target} in {cfg.dte_min}-{cfg.dte_max} DTE")
+            if sym in owns and not w:
+                errors.append(f"{sym}: no put with a bid at or below ${owns[sym]:g} in {cfg.dte_min}-{cfg.dte_max} DTE (wheel view)")
             rows += r
+            wheel_rows += w
             ref[sym] = (ref_iv, rv, spot)
             print(f"{sym:6} {len(r)} expiries", file=sys.stderr)
         except Exception as ex:  # one bad ticker shouldn't kill the run
@@ -435,8 +631,10 @@ def main():
         "earnings_source": bool(fh_key),
         "config": {"delta": cfg.delta, "dte_min": cfg.dte_min, "dte_max": cfg.dte_max, "min_oi": cfg.min_oi,
                    "max_spread": cfg.max_spread, "ivr_min": cfg.ivr_min, "ivrv_min": cfg.ivrv_min,
-                   "min_history": cfg.min_history},
-        "rows": rows, "history": history, "errors": errors,
+                   "min_history": cfg.min_history, "min_roc": cfg.min_roc, "custom_delta": deltas,
+                   "own_price": owns},
+        "watchlist": {"source": wl_source, "notes": wl_notes},
+        "rows": rows, "wheel": wheel_rows, "history": history, "errors": errors,
     }
     out = Path(cfg.out)
     out.mkdir(parents=True, exist_ok=True)

@@ -13,9 +13,10 @@ Owner's trading rules the screener encodes (change via CLI flags, not by editing
 
 ## Layout
 - `screener.py`: everything: Tradier client, `Mock` client, metrics, SQLite, output. Stdlib only, Python 3.9+.
+- Watchlist source: `load_watchlist(path, url)` reads a published Google Sheet CSV (`WATCHLIST_URL`, never echoed or logged) with fallback to `watchlist.txt`; `watchlist.txt` lines accept `TICKER [delta] [@own_price]`.
 - `template.html`: the page. `screener.py` replaces the literal `/*__DATA__*/null` with the JSON payload and writes
   `public/index.html`. Vanilla JS, no CDN, so it works offline on a locked-down server.
-- `watchlist.txt`: tickers, `#` comments.
+- `watchlist.txt`: tickers, `#` comments. Optional per-ticker max put delta after the ticker (`AMD 0.30`); default is `--delta`.
 - Generated and gitignored: `public/` (index.html, latest.json, latest.csv, runs/ snapshots), `public-mock/` (same, for `--mock`),
   `data/screener.db` (live), `data/mock.db`.
 - Secrets: `.env` (gitignored; see `.env.example`). Never print, log, or commit the token.
@@ -32,12 +33,16 @@ Mock returns Tradier-shaped responses, so it exercises the real parsing code, bu
 
 ## Data flow
 `Tradier.quotes` → per ticker: `expirations` (filter to DTE window) → `closes` (30d realized vol) → `chain` per expiry
-(`greeks=true`) → pick put → `screen_symbol` returns row dicts → SQLite upsert (`iv_daily`, `picks`) → history query →
+(`greeks=true`) → pick put at the ticker's target delta + `build_ladder` (the 12 puts with 0.05-0.40 |delta| nearest the
+target, stored on each row as `ladder`; no extra API calls) → `screen_symbol` returns row dicts → SQLite upsert (`iv_daily`, `picks`) → history query →
 payload JSON → `template.html`.
 
 ## Gotchas / decisions (don't undo without reason)
 - Tradier returns a bare object, not a list, when there is one item; always go through `aslist()`.
 - Put deltas are negative; rows store `abs(delta)`. Selection = highest |delta| still ≤ target.
+- Target delta is per ticker (`row.target_delta`, payload `config.custom_delta`). Rankings stay apples-to-apples only
+  among tickers with the same target; the page badges custom ones (`≤0.30Δ`). The `picks` history ("best ROC at ≤ target")
+  mixes if a ticker's target is changed later; that is accepted.
 - `mid_iv` is a decimal (0.35). `norm_iv` tolerates percent-style values and treats 0 as missing.
 - IV Rank reference = ATM IV of the in-window expiry nearest 21 DTE, ranked against that ticker's own stored history.
   Tradier has no IV history, so rank shows "–" until `--min-history` (20) days exist; the ● pass test falls back to IV/RV.
@@ -72,10 +77,19 @@ Still to check:
   Leave it alone unless asked.
 
 ## Page UX notes (template.html)
+- Two lenses (tabs): Income (by delta, the table above) and Wheel (own price). `lens`, `src()` (rows vs `D.wheel`), `incomeCols`/`wheelCols`.
+  Wheel rows come from `wheel_leg()`: strike = highest put ≤ min(own, spot) with a bid; ● = liquid and pays and no earnings (no IV test).
+  `wheelReason()` / wheel `checklist()` mirror that; keep in sync with `screen_symbol`.
 - Default sort is `passes` desc then ROC: "Worth a look" rows first, the rest dimmed, with group header rows.
+- ● = liquid AND rich AND `pays` (ann. ROC ≥ `--min-roc`, default 25) AND no earnings; the flags are computed in `screen_symbol`.
+  `reason(r)` turns them into one line (Skip / Weak / Thin / Worth a look) for the ● tooltip, the details header and the
+  "Top opportunities" cards (`topPicks()`: best ● expiry per ticker nearest `PREF_DTE`, top 6, independent of filters).
+  Saved runs from before `pays` existed have `pays == null`; the page guards for it.
 - `cols[].chk(r)` marks the cells that decide the ● (spread, OI, IV Rank or IV/RV, earnings). They light up green/red/amber on
   row hover/selection. **Keep these in sync with the `liquid` / `rich` / `passes` logic in `screener.py`.**
-- A selected row is keyed `SYMBOL|expiry`. Its details panel is sticky at the bottom of the window (checklist + IV history charts).
+- A selected row is keyed `SYMBOL|expiry`. Its details panel is sticky at the bottom of the window: checklist, the strike
+  ladder (`ladderHTML`, greyed rows are above the target delta), then IV history charts. Saved runs from before the ladder
+  existed have no `ladder`/`target_delta`; the template guards for that (`tgt()`).
 - The help drawer (`? How to read this`, or the `?` key) is built in `helpHTML()` from `config`, so thresholds there never drift.
 - "Rows per ticker" (All / Best ROC / Nearest 14 DTE) is client-side only; `PREF_DTE` is a JS constant, not a CLI flag.
 - After editing the template run `python3 screener.py --rerender` (or `--mock --rerender`) to apply it to saved pages.

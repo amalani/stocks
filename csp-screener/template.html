@@ -68,6 +68,19 @@ td.bad{color:var(--bad)}
 .dot{color:var(--good)}
 .tag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:12px}
 .tag.bad{background:var(--badbg);color:var(--bad)}
+.tag.cust{background:var(--sel);color:var(--ink);font-size:11px;padding:0 5px}
+
+/* strike ladder in the details panel */
+.ladder{margin-top:16px}
+.ladder table{font-size:12.5px}
+.ladder th{position:static;cursor:default;padding:5px 9px}
+.ladder td{padding:5px 9px}
+.ladder tr{cursor:default}
+.ladder tr:hover{background:none}
+.ladder tr.pick td{font-weight:600;background:var(--sel)}
+.ladder tr.over td{color:var(--mute)}
+.ladder tr.edge td{border-top:2px solid var(--line)}
+.ladder .lt{font-size:11px;font-weight:600;color:var(--c0);margin-left:6px}
 .empty{padding:28px;text-align:center;color:var(--mute)}
 
 /* shortlist grouping: ● rows first, the rest dimmed */
@@ -89,7 +102,7 @@ tbody tr:hover td[data-chk=na],tbody tr.sel td[data-chk=na]{background:var(--war
 
 /* details panel: pinned to the bottom of the window so the table stays visible above it */
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-top:16px;
-  position:sticky;bottom:10px;z-index:5;max-height:50vh;overflow:auto;box-shadow:0 8px 28px rgba(0,0,0,.18)}
+  position:sticky;bottom:10px;z-index:5;max-height:58vh;overflow:auto;box-shadow:0 8px 28px rgba(0,0,0,.18)}
 .panel .head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
 .panel .head button{padding:2px 8px}
 .dgrid{display:grid;grid-template-columns:minmax(250px,330px) 1fr;gap:20px}
@@ -105,6 +118,23 @@ tbody tr:hover td[data-chk=na],tbody tr.sel td[data-chk=na]{background:var(--war
 svg text{font:11px system-ui,sans-serif;fill:var(--mute)}
 svg .grid{stroke:var(--line);stroke-width:1}
 svg .ln{fill:none;stroke-width:2;stroke-linejoin:round}
+/* top opportunities strip */
+.tabs{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin:0 0 14px}
+.tabs button{border:0;border-radius:0;padding:7px 14px;font-weight:600;color:var(--mute)}
+.tabs button+button{border-left:1px solid var(--line)}
+.tabs button.on{background:var(--sel);color:var(--ink)}
+.top3{margin:0 0 16px}
+.top3 h2{font-size:13px;margin:0 0 8px;font-weight:600}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(235px,1fr));gap:10px}
+.card{display:block;width:100%;text-align:left;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel)}
+.card:hover{border-color:var(--good);background:var(--panel)}
+.card.sel{border-color:var(--c0);background:var(--sel)}
+.card .t{display:flex;justify-content:space-between;align-items:baseline}
+.card .roc{font-size:20px;font-weight:700;color:var(--good)}
+.card .roc small{font-size:11px;font-weight:400;color:var(--mute)}
+.card .m{font-size:12px;color:var(--mute);margin-top:4px;line-height:1.5}
+.card .m b{color:var(--ink);font-weight:600}
+.reason{font-size:13px;font-weight:600;margin:-2px 0 12px}
 .legend{margin-top:18px;font-size:12px;color:var(--mute);line-height:1.6}
 .legend b{color:var(--ink);font-weight:600}
 details{margin-top:12px;font-size:13px}
@@ -132,6 +162,8 @@ details{margin-top:12px;font-size:13px}
     </div></div>
   <div class="meta" id="meta"></div>
   <div id="banners"></div>
+  <div class="tabs" id="tabs"><button data-lens="income" class="on">Income · by delta</button><button data-lens="wheel" id="tab-wheel">Wheel · own price</button></div>
+  <div class="top3" id="top3"></div>
 
   <div class="bar">
     <label>Ticker<input type="text" id="f-q" placeholder="e.g. AMD"></label>
@@ -184,15 +216,17 @@ const pct = (v, d = 1) => v == null ? '–' : Number(v).toFixed(d) + '%';
 
 // ---- columns ----------------------------------------------------------
 // chk(r) -> 'ok' | 'no' | 'na' | null marks the cells that decide the ● (highlighted on hover/selection).
-const cols = [
-  {k:'passes', label:'●', tip:'Worth a look: liquid, IV elevated, no earnings before expiry. Click to group these first.', html:r => r.passes ? '<span class="dot">●</span>' : ''},
-  {k:'symbol', label:'Ticker', left:true, html:r => `<b>${esc(r.symbol)}</b>`},
+const incomeCols = [
+  {k:'passes', label:'●', tip:'Worth a look: liquid, IV elevated, pays at least the ROC hurdle, no earnings before expiry. Hover a row\'s ● for its reason. Click to group these first.',
+    ttip:r => reason(r), html:r => r.passes ? '<span class="dot">●</span>' : ''},
+  {k:'symbol', label:'Ticker', left:true, html:r => `<b>${esc(r.symbol)}</b>` + (custom(r) ? ` <span class="tag cust" title="Custom target delta from watchlist.txt">≤${num(tgt(r))}Δ</span>` : '')},
   {k:'spot', label:'Spot', html:r => num(r.spot)},
   {k:'expiry', label:'Expiry', html:r => `${r.expiry.slice(5)} <span class="mute">${r.dte}d</span>`},
   {k:'strike', label:'Strike', html:r => num(r.strike, r.strike % 1 ? 2 : 0)},
   {k:'delta', label:'Δ', tip:'Put delta (shown positive): a rough assignment probability', html:r => num(r.delta)},
   {k:'mid', label:'Mid', html:r => num(r.mid)},
-  {k:'roc', label:'Ann. ROC', tip:'mid / strike × 365 / DTE', cls:() => 'strong', html:r => pct(r.roc)},
+  {k:'roc', label:'Ann. ROC', tip:'mid / strike × 365 / DTE. Compared with your ROC hurdle.', cls:() => 'strong',
+    chk:r => r.pays == null ? null : (r.pays ? 'ok' : 'no'), html:r => pct(r.roc)},
   {k:'cushion_pct', label:'Cushion', tip:'(spot − strike) / spot', html:r => pct(r.cushion_pct)},
   {k:'em_mult', label:'vs EM', tip:'Cushion in units of the 1σ expected move (ATM IV). Around 0.8-0.9× is normal at 0.20Δ; ≥ 1× is further out; below 0.75× is close.',
     cls:r => r.em_mult == null ? '' : r.em_mult >= 1 ? 'good' : r.em_mult < 0.75 ? 'warn' : '', html:r => r.em_mult == null ? '–' : num(r.em_mult) + '×'},
@@ -219,6 +253,27 @@ let sort = {k:'passes', dir:-1};   // shortlist first, then by ROC
 let selected = null;               // "SYMBOL|expiry"
 const keyOf = r => r.symbol + '|' + r.expiry;
 
+// Two lenses over the same run: "income" (fixed delta per ticker) and "wheel" (strike at your own price).
+let lens = 'income';
+const src = () => lens === 'wheel' ? (D.wheel || []) : D.rows;
+const col = k => incomeCols.find(c => c.k === k);
+const wheelCols = [
+  {k:'passes', label:'●', tip:'Worth a look for the wheel: liquid, pays at least the ROC hurdle, no earnings before expiry. Hover a row\'s ● for its reason. Click to group these first.',
+    ttip:r => reason(r), html:r => r.passes ? '<span class="dot">●</span>' : ''},
+  col('symbol'), col('spot'),
+  {k:'own_price', label:'Own price', tip:'The price you would be happy to own it at (from your sheet or watchlist)', html:r => '$' + num(r.own_price, r.own_price % 1 ? 2 : 0)},
+  col('expiry'), col('strike'),
+  {k:'delta', label:'Assign Δ', tip:'Put delta: roughly the chance of being assigned', html:r => r.delta == null ? '–' : num(r.delta)},
+  col('mid'), col('roc'),
+  {k:'net_cost', label:'Net cost', tip:'Strike minus the premium: your cost per share if assigned', html:r => '$' + num(r.net_cost)},
+  {k:'net_below_spot_pct', label:'Below spot', tip:'How far your net cost is below today\'s price', html:r => pct(r.net_below_spot_pct)},
+  {...col('ivr'), chk: undefined},   // information only here, not part of the ●
+  col('spread_pct'), col('oi'), col('earnings'), col('spark'),
+];
+let cols = incomeCols;
+const tgt = r => r.target_delta != null ? r.target_delta : C.delta;     // older saved runs have no target_delta
+const custom = r => Math.abs(tgt(r) - C.delta) > 1e-9;
+
 function spark(sym) {
   const h = (D.history[sym] || []).filter(p => p.iv != null).slice(-60);
   if (h.length < 2) return '<span class="mute">–</span>';
@@ -233,7 +288,7 @@ const cmpArr = (a, b) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i])
 function filtered() {
   const q = $('#f-q').value.trim().toUpperCase(), exp = $('#f-exp').value;
   const roc = parseFloat($('#f-roc').value) || 0, ivr = parseFloat($('#f-ivr').value) || 0;
-  const rows = D.rows.filter(r =>
+  const rows = src().filter(r =>
     (!q || r.symbol.includes(q)) && (!exp || r.expiry === exp) && r.roc >= roc &&
     (!ivr || (r.ivr != null && r.ivr >= ivr)) &&
     (!$('#f-pass').checked || r.passes) && (!$('#f-earn').checked || !r.earnings) &&
@@ -251,13 +306,37 @@ function rowHTML(r, anyPass) {
   const cls = [selected === keyOf(r) ? 'sel' : '', anyPass && !r.passes ? 'dim' : ''].join(' ');
   return `<tr data-key="${esc(keyOf(r))}" class="${cls}">` + cols.map(c => {
     const klass = [c.left ? 'l' : '', c.cls ? c.cls(r) : ''].join(' ');
-    const tip = typeof c.tip === 'function' ? c.tip(r) : '';
+    const tip = c.ttip ? c.ttip(r) : (typeof c.tip === 'function' ? c.tip(r) : '');
     const chk = c.chk ? c.chk(r) : null;
     return `<td class="${klass}"${chk ? ` data-chk="${chk}"` : ''}${tip ? ` title="${esc(tip)}"` : ''}>${c.html(r)}</td>`;
   }).join('') + '</tr>';
 }
 
+// Best ● expiry per ticker (nearest ~2 weeks, so very short expiries do not win on inflated annualized ROC).
+function topPicks() {
+  const best = new Map(), s = x => [-Math.abs(x.dte - PREF_DTE), x.roc];
+  src().filter(r => r.passes).forEach(r => { const b = best.get(r.symbol); if (!b || cmpArr(s(r), s(b)) > 0) best.set(r.symbol, r); });
+  return [...best.values()].sort((a, b) => b.roc - a.roc).slice(0, 6);
+}
+const WHEEL_HOWTO = 'Add an own price to a ticker (an "Own price" column in your sheet, or <code>AMD @480</code> in watchlist.txt) to see wheel setups here.';
+function renderTop() {
+  const wheel = lens === 'wheel', picks = topPicks();
+  const card = r => wheel
+    ? `<div class="t"><b>${esc(r.symbol)}</b><span class="roc">${pct(r.roc, 0)}<small> ann.</small></span></div>
+        <div class="m"><b>$${num(r.strike, r.strike % 1 ? 2 : 0)} put</b> · ${r.expiry.slice(5)} (${r.dte}d) · assign Δ${r.delta == null ? '–' : num(r.delta)}<br>
+        Own at <b>$${num(r.net_cost)}</b> net · ${pct(r.net_below_spot_pct)} below spot<br>
+        $${r.premium.toFixed(0)} on $${r.collateral.toLocaleString()} · ${pct(r.spread_pct)} spread</div>`
+    : `<div class="t"><b>${esc(r.symbol)}</b><span class="roc">${pct(r.roc, 0)}<small> ann.</small></span></div>
+        <div class="m"><b>$${num(r.strike, r.strike % 1 ? 2 : 0)} put</b> · ${r.expiry.slice(5)} (${r.dte}d) · Δ${num(r.delta)}<br>
+        $${r.premium.toFixed(0)} on $${r.collateral.toLocaleString()} · ${pct(r.cushion_pct)} cushion<br>
+        ${r.ivr != null ? 'IV Rank ' + num(r.ivr, 0) : 'IV ' + num(r.iv_rv) + '× realized'} · ${pct(r.spread_pct)} spread</div>`;
+  $('#top3').innerHTML = `<h2>${wheel ? 'Top wheel setups' : 'Top opportunities'} <span class="mute" style="font-weight:400">· best ● expiry per ticker, nearest ${PREF_DTE} days · click one for details</span></h2>` +
+    (picks.length ? `<div class="cards">${picks.map(r => `<button class="card ${selected === keyOf(r) ? 'sel' : ''}" data-key="${esc(keyOf(r))}">${card(r)}</button>`).join('')}</div>`
+      : `<p class="mute" style="margin:0">${wheel && !src().length ? WHEEL_HOWTO : 'Nothing clears all the checks right now. That is a fine answer: the "Everything else" rows below say why each one fell short.'}</p>`);
+}
+
 function render() {
+  renderTop();
   const rows = filtered().sort((a, b) => {
     const av = a[sort.k], bv = b[sort.k];
     if (av == null && bv == null) return 0;
@@ -278,7 +357,7 @@ function render() {
     html += rowHTML(r, anyPass);
   });
   $('#tbl tbody').innerHTML = rows.length ? html :
-    `<tr><td colspan="${cols.length}" class="empty">Nothing matches these filters.</td></tr>`;
+    `<tr><td colspan="${cols.length}" class="empty">${lens === 'wheel' && !src().length ? WHEEL_HOWTO : 'Nothing matches these filters.'}</td></tr>`;
   $('#count').textContent = `${rows.length} row${rows.length === 1 ? '' : 's'} · ${nPass} worth a look`;
 }
 
@@ -311,15 +390,41 @@ function chart(title, series, fmt) {
   return `<div><h3>${title}</h3><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(title)}">${g}</svg></div>`;
 }
 
-// The three tests behind ●, with the actual numbers.
+// One plain-English line on why a row is (or is not) worth a look.
+function reason(r) {
+  if (r.own_price != null) return wheelReason(r);
+  if (r.earnings) return `Skip: earnings ${r.earnings} before expiry`;
+  const liq = r.spread_pct != null && r.spread_pct <= C.max_spread && r.oi >= C.min_oi;
+  if (!liq) return `Skip: thin market (spread ${pct(r.spread_pct)}, OI ${r.oi.toLocaleString()})`;
+  if (!r.rich) return r.ivr != null ? `Weak: IV not elevated (IV Rank ${num(r.ivr, 0)}, needs ${C.ivr_min})`
+                                    : `Weak: IV not elevated (IV is ${num(r.iv_rv)}× realized, needs ${C.ivrv_min}×)`;
+  if (r.pays === false) return `Thin: ${pct(r.roc, 0)} annualized is under your ${C.min_roc}% hurdle`;
+  const iv = r.ivr != null ? `IV Rank ${num(r.ivr, 0)}` : `IV ${num(r.iv_rv)}× realized`;
+  return `Worth a look: pays ${pct(r.roc, 0)} annualized, ${iv}, ${pct(r.cushion_pct)} cushion${r.earn_known ? '' : ' (earnings unchecked)'}`;
+}
+
+// Wheel: you are happy to own it at your price, so the question is whether the payout and the market are good.
+function wheelReason(r) {
+  if (r.earnings) return `Skip: earnings ${r.earnings} before expiry`;
+  const liq = r.spread_pct != null && r.spread_pct <= C.max_spread && r.oi >= C.min_oi;
+  if (!liq) return `Skip: thin market (spread ${pct(r.spread_pct)}, OI ${r.oi.toLocaleString()})`;
+  if (r.pays === false) return `Thin: ${pct(r.roc, 0)} annualized is under your ${C.min_roc}% hurdle`;
+  return `Worth a look: own it at a net $${num(r.net_cost)} (${pct(r.net_below_spot_pct)} below spot) and get paid ${pct(r.roc, 0)} annualized while you wait` +
+    (r.delta != null ? `; about ${(r.delta * 100).toFixed(0)}% assignment odds` : '') + (r.earn_known ? '' : ' (earnings unchecked)');
+}
+
+// The tests behind ●, with the actual numbers.
 function checklist(r) {
   const liq = r.spread_pct != null && r.spread_pct <= C.max_spread && r.oi >= C.min_oi;
+  const wheel = r.own_price != null;
   const items = [
     {s: liq ? 'ok' : 'no', t: 'Liquid',
      d: `spread ${pct(r.spread_pct)} (max ${C.max_spread}%) · open interest ${r.oi.toLocaleString()} (min ${C.min_oi})`},
-    {s: r.rich ? 'ok' : 'no', t: 'IV elevated',
+    ...(wheel ? [] : [{s: r.rich ? 'ok' : 'no', t: 'IV elevated',
      d: r.ivr != null ? `IV Rank ${num(r.ivr, 0)} (needs ≥ ${C.ivr_min}), over ${r.ivr_n} days of history`
-        : `IV/RV ${num(r.iv_rv)} (needs ≥ ${C.ivrv_min}). IV Rank starts after ${C.min_history} days of history (${r.ivr_n} so far)`},
+        : `IV/RV ${num(r.iv_rv)} (needs ≥ ${C.ivrv_min}). IV Rank starts after ${C.min_history} days of history (${r.ivr_n} so far)`}]),
+    ...(r.pays == null ? [] : [{s: r.pays ? 'ok' : 'no', t: 'Pays enough',
+     d: `${pct(r.roc, 0)} annualized (hurdle ${C.min_roc}%)`}]),
     {s: r.earnings ? 'no' : (r.earn_known ? 'ok' : 'na'), t: 'No earnings before expiry',
      d: r.earnings ? `earnings ${r.earnings} is before ${r.expiry}` : (r.earn_known ? 'none found' : 'unknown: no earnings source is configured, check it yourself')},
   ];
@@ -328,26 +433,62 @@ function checklist(r) {
     `<li><span class="ic s-${i.s}">${ic[i.s]}</span><span>${i.t}<span class="d">${esc(i.d)}</span></span></li>`).join('')}</ul>`;
 }
 
+// Neighbouring strikes at the same expiry: the screened pick vs. going further out / closer in.
+function ladderHTML(r) {
+  const L = r.ladder;
+  if (!L || !L.length) return '';
+  const wheel = r.own_price != null, t = tgt(r);
+  const isOver = x => wheel ? x.strike > r.own_price + 1e-9 : x.delta > t + 1e-9;   // above your own price / above the target delta
+  const rowsHTML = [...L].reverse().map((x, i, arr) => {        // highest strike (highest delta) first
+    const pick = x.strike === r.strike, over = isOver(x);
+    const edge = i > 0 && isOver(arr[i - 1]) && !over;           // boundary between the greyed and the normal rows
+    const bad = x.spread_pct == null || x.spread_pct > C.max_spread || x.oi < C.min_oi;
+    return `<tr class="${pick ? 'pick' : ''} ${over ? 'over' : ''} ${edge ? 'edge' : ''}">
+      <td class="l">${num(x.strike, x.strike % 1 ? 2 : 0)}${pick ? `<span class="lt">◀ ${wheel ? 'your strike' : 'screened pick'}</span>` : ''}</td>
+      <td>${num(x.delta)}</td><td>${num(x.mid)}</td><td>${pct(x.roc)}</td><td>${pct(x.cushion_pct)}</td>
+      <td>${x.em_mult == null ? '–' : num(x.em_mult) + '×'}</td>
+      <td class="${x.spread_pct == null || x.spread_pct > C.max_spread ? 'bad' : ''}">${pct(x.spread_pct)}</td>
+      <td class="${x.oi < C.min_oi ? 'bad' : ''}">${x.oi.toLocaleString()}</td>
+      <td>${x.iv == null ? '–' : pct(x.iv * 100, 0)}</td></tr>`;
+  }).join('');
+  return `<div class="ladder"><h3>Strikes at this expiry <span class="mute" style="font-weight:400">· ${wheel ? `greyed rows are above your $${num(r.own_price, r.own_price % 1 ? 2 : 0)} own price (you would pay more than you want to)` : `greyed rows are above the ${num(t)}Δ target (more premium, more assignment risk)`}</span></h3>
+    <div class="tablewrap"><table><thead><tr><th class="l">Strike</th><th>Δ</th><th>Mid</th><th>Ann. ROC</th><th>Cushion</th><th>vs EM</th><th>Spread</th><th>OI</th><th>IV</th></tr></thead>
+    <tbody>${rowsHTML}</tbody></table></div></div>`;
+}
+
+function takeHTML(r, ivs) {
+  const hist = `${ivs.length} day${ivs.length === 1 ? '' : 's'} of IV history${ivs.length ? `, range ${pct(Math.min(...ivs) * 100, 0)}–${pct(Math.max(...ivs) * 100, 0)}` : ''}.`;
+  if (r.own_price == null) {
+    return `Selling 1 contract collects about <b>$${(r.premium).toFixed(0)}</b> on <b>$${r.collateral.toLocaleString()}</b> collateral; break-even <b>$${num(r.strike - r.mid)}</b>.
+        The strike is ${pct(r.cushion_pct)} below spot${r.em_mult != null ? `, ${num(r.em_mult)}× the 1σ expected move (${r.em_mult < 1 ? 'inside' : 'outside'} it)` : ''}.
+        ${hist}`;
+  }
+  return `Selling 1 contract collects about <b>$${r.premium.toFixed(0)}</b> on <b>$${r.collateral.toLocaleString()}</b> collateral.
+        If assigned you own 100 shares at a net <b>$${num(r.net_cost)}</b> (strike minus premium), <b>${pct(r.net_below_spot_pct)}</b> below today's $${num(r.spot)}.
+        Your own price is $${num(r.own_price)}${r.own_above_spot ? ', above today\'s price, so this uses the highest strike below spot' : ''}.
+        ${r.delta != null ? `Assignment odds are roughly ${(r.delta * 100).toFixed(0)}%. ` : ''}IV Rank is ${r.ivr != null ? num(r.ivr, 0) : 'not available yet'} (information only on this tab). ${hist}`;
+}
+
 function showDetail() {
-  const r = D.rows.find(x => keyOf(x) === selected);
+  const r = src().find(x => keyOf(x) === selected);
   if (!r) return;
   const sym = r.symbol, h = D.history[sym] || [];
   const mk = key => h.filter(p => p[key] != null).map(p => ({t: Date.parse(p.d), v: p[key]}));
   const ivs = h.map(p => p.iv).filter(v => v != null);
   $('#hist').hidden = false;
   $('#hist').innerHTML = `<div class="head">
-      <span><b style="font-size:15px">${esc(sym)}</b> · ${esc(r.expiry)} (${r.dte}d) · $${num(r.strike, r.strike % 1 ? 2 : 0)} put
+      <span><b style="font-size:15px">${esc(sym)}</b> · ${esc(r.expiry)} (${r.dte}d) · $${num(r.strike, r.strike % 1 ? 2 : 0)} put${r.own_price != null ? ` · own price $${num(r.own_price, r.own_price % 1 ? 2 : 0)}` : ''}
         · <b class="${r.passes ? 's-ok' : 'mute'}">${r.passes ? '● Worth a look' : 'Not on the shortlist'}</b></span>
       <button id="hx" aria-label="Close details" title="Close (Esc)">✕</button></div>
+    <div class="reason ${r.passes ? 's-ok' : 'mute'}">${esc(reason(r))}</div>
     <div class="dgrid">
       <div>${checklist(r)}
-        <div class="take">Selling 1 contract collects about <b>$${(r.premium).toFixed(0)}</b> on <b>$${r.collateral.toLocaleString()}</b> collateral; break-even <b>$${num(r.strike - r.mid)}</b>.
-        The strike is ${pct(r.cushion_pct)} below spot${r.em_mult != null ? `, ${num(r.em_mult)}× the 1σ expected move (${r.em_mult < 1 ? 'inside' : 'outside'} it)` : ''}.
-        ${ivs.length} day${ivs.length === 1 ? '' : 's'} of IV history${ivs.length ? `, range ${pct(Math.min(...ivs) * 100, 0)}–${pct(Math.max(...ivs) * 100, 0)}` : ''}.</div></div>
-      <div class="charts">
-        ${chart('ATM IV vs 30-day realized vol', [{name: 'IV', pts: mk('iv')}, {name: 'RV', pts: mk('rv')}], v => (v * 100).toFixed(0) + '%')}
-        ${chart(`Best annualized ROC at ≤${C.delta.toFixed(2)}Δ`, [{name: 'ROC', pts: mk('roc')}], v => v.toFixed(0) + '%')}
-      </div>
+        <div class="take">${takeHTML(r, ivs)}</div></div>
+      <div>${ladderHTML(r) || '<p class="mute">No strike ladder saved for this run.</p>'}</div>
+    </div>
+    <div class="charts" style="margin-top:16px">
+      ${chart('ATM IV vs 30-day realized vol', [{name: 'IV', pts: mk('iv')}, {name: 'RV', pts: mk('rv')}], v => (v * 100).toFixed(0) + '%')}
+      ${r.own_price != null ? '' : chart(`Best annualized ROC at ≤${tgt(r).toFixed(2)}Δ`, [{name: 'ROC', pts: mk('roc')}], v => v.toFixed(0) + '%')}
     </div>`;
   $('#hx').onclick = closeDetail;
 }
@@ -362,15 +503,16 @@ function helpHTML() {
   return `<div class="row"><h2>How to read this page</h2><button id="helpx" aria-label="Close help">✕</button></div>
   <h4>What to look for</h4>
   <ol>
-    <li><b>Start with the ● rows at the top.</b> They already clear the basics: liquid, IV elevated, no earnings before expiry. Everything else is dimmed.</li>
+    <li><b>Start with "Top opportunities", then the ● rows.</b> They clear every check: liquid, IV elevated, pays at least your ROC hurdle, no earnings before expiry. Everything else is dimmed, and hovering its ● (or opening it) gives a one-line reason: Skip, Weak or Thin.</li>
     <li><b>Choose among them</b> by Ann. ROC, then check <b>vs EM</b> (more room to the strike) and <b>IV Rank</b> (is IV high for this stock, or is it always high?).</li>
     <li><b>Hover or click a row.</b> The cells that decided the ● light up green ✓, red ✗ or amber ?, and the panel at the bottom shows the numbers and the IV history.</li>
     <li><b>Before you trade:</b> confirm the earnings date yourself and check the live bid/ask. This page is a snapshot, and the mid is not a fill.</li>
   </ol>
   <h4>Metrics</h4>
   <dl>
-    <dt>● Worth a look</dt><dd>Spread ≤ ${C.max_spread}% and open interest ≥ ${C.min_oi}; IV Rank ≥ ${C.ivr_min} (or IV/RV ≥ ${C.ivrv_min} until ${C.min_history} days of history exist); no earnings before expiry. A shortlist, not a recommendation.</dd>
-    <dt>Ann. ROC</dt><dd>Premium (mid) ÷ strike, annualized by days to expiry. Compare it across names with similar expiries: very short expiries (a few days) look inflated because a small credit is annualized over days.</dd>
+    <dt>● Worth a look</dt><dd>Spread ≤ ${C.max_spread}% and open interest ≥ ${C.min_oi}; IV Rank ≥ ${C.ivr_min} (or IV/RV ≥ ${C.ivrv_min} until ${C.min_history} days of history exist); ann. ROC ≥ ${C.min_roc != null ? C.min_roc + '%' : 'your hurdle'}; no earnings before expiry. A shortlist, not a recommendation.</dd>
+    <dt>Why a row is not ●</dt><dd><b>Skip</b>: earnings before expiry, or a thin market. <b>Weak</b>: IV is not elevated, so premium is ordinary for this stock. <b>Thin</b>: the setup is fine but the payout is under your hurdle (change it with <code>--min-roc</code>).</dd>
+    <dt>Ann. ROC</dt><dd>Premium (mid) ÷ strike, annualized by days to expiry, checked against your hurdle. Compare it across names with similar expiries: very short expiries (a few days) look inflated because a small credit is annualized over days.</dd>
     <dt>Cushion</dt><dd>How far spot can fall before reaching the strike, as a % of spot.</dd>
     <dt>vs EM</dt><dd>The cushion in 1σ expected moves (from ATM IV). Around 0.8-0.9× is normal at ${C.delta.toFixed(2)}Δ. At 1× or more the strike sits outside the typical move; below 0.75× (amber) it is close.</dd>
     <dt>ATM IV</dt><dd>Implied volatility of the at-the-money option about 21 days out, the market's expected yearly move. Higher means fatter premium, but ask why (a selloff? an event?).</dd>
@@ -381,6 +523,10 @@ function helpHTML() {
     <dt>Earnings</dt><dd>A date before expiry means gap risk. ? means no earnings source is configured, so check manually.</dd>
     <dt>Δ, Mid, Strike</dt><dd>Δ is the put's delta (a rough assignment probability), shown as positive. Mid is (bid + ask) ÷ 2.</dd>
     <dt>IV trend</dt><dd>The last 60 days of ATM IV for that ticker.</dd>
+    <dt>Strike ladder</dt><dd>Click a row to see the puts around its target delta at that expiry. Greyed rows are above the target: more premium, more assignment risk. Use it to see what going one or two strikes further out costs in ROC, or what a richer strike would pay.</dd>
+    <dt>Custom delta (≤0.30Δ badge)</dt><dd>A ticker with its own target in <code>watchlist.txt</code> (for example <code>AMD 0.30</code>), for names you are happy to be assigned on. Compare ROC within a ticker, not across tickers with different targets.</dd>
+    <dt>Wheel tab</dt><dd>For tickers with an own price (the price you would be happy to own the stock at): the strike at or just below it, at each expiry. <b>Net cost</b> is strike minus premium, your per-share cost if assigned. <b>Below spot</b> is how far under today's price that is. <b>Assign Δ</b> is roughly the chance of being assigned. The ● needs liquidity, the ROC hurdle and no earnings; IV richness is information only, since you are happy to own it anyway.</dd>
+    <dt>Where own prices come from</dt><dd>An "Own price" column in your published Google Sheet tab (<code>WATCHLIST_URL</code> in .env), or <code>AMD @480</code> in watchlist.txt.</dd>
   </dl>
   <h4>Controls</h4>
   <p><b>Rows per ticker</b> shrinks the list: "Best ROC" tends to pick the shortest expiry; "Nearest 14 DTE" keeps the one closest to two weeks. Shortlist rows win either way.</p>
@@ -396,25 +542,48 @@ function toggleHelp(force) {
 
 // ---- wiring -----------------------------------------------------------
 function csv() {
-  const keys = ['symbol','spot','expiry','dte','strike','delta','bid','ask','mid','premium','collateral','roc','cushion_pct','em_mult','ref_iv','ivr','iv_rv','spread_pct','oi','earnings','passes'];
+  const keys = lens === 'wheel'
+    ? ['symbol','spot','own_price','expiry','dte','strike','delta','bid','ask','mid','premium','collateral','roc','net_cost','net_below_spot_pct','ref_iv','ivr','spread_pct','oi','earnings','passes']
+    : ['symbol','spot','expiry','dte','strike','delta','bid','ask','mid','premium','collateral','roc','cushion_pct','em_mult','ref_iv','ivr','iv_rv','spread_pct','oi','earnings','passes'];
   const rows = filtered().sort((a, b) => b.roc - a.roc);
   const body = [keys.join(',')].concat(rows.map(r => keys.map(k => r[k] == null ? '' : (typeof r[k] === 'number' ? +r[k].toFixed(4) : r[k])).join(',')));
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([body.join('\n')], {type: 'text/csv'}));
-  a.download = 'csp-screen-' + D.generated.slice(0, 10) + '.csv';
+  a.download = 'csp-' + lens + '-' + D.generated.slice(0, 10) + '.csv';
   a.click();
 }
 
+function setLegend() {
+  const hurdle = C.min_roc != null ? C.min_roc + '%' : 'your hurdle';
+  $('#legend').innerHTML = (lens === 'wheel'
+    ? `<b>●</b> = worth a look for the wheel: liquid, pays at least ${hurdle} annualized, no earnings before expiry. IV richness is not required, since you are happy to own the stock at your price. <b>Net cost</b> is strike minus premium; <b>Assign Δ</b> is roughly the chance of being assigned.`
+    : `<b>●</b> = worth a look: liquid, IV elevated, pays at least ${hurdle} annualized, no earnings before expiry.`) +
+    ` Hover a row's ● for its reason, or click the row to see which cells decided it. Press <b>?</b> (or the button at the top) for what each column means and what to look for.`;
+}
+
+function switchLens(l) {
+  lens = l; cols = l === 'wheel' ? wheelCols : incomeCols;
+  sort = {k: 'passes', dir: -1}; selected = null; $('#hist').hidden = true;
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.lens === l));
+  setLegend(); render();
+}
+
 function init() {
-  $('#meta').textContent = `Updated ${D.generated} · short put ≤ ${C.delta.toFixed(2)}Δ · ${C.dte_min}–${C.dte_max} DTE · ${new Set(D.rows.map(r => r.symbol)).size} tickers`;
+  const nCustom = Object.keys(C.custom_delta || {}).length;
+  $('#meta').textContent = `Updated ${D.generated} · short put ≤ ${C.delta.toFixed(2)}Δ${nCustom ? ` (${nCustom} ticker${nCustom === 1 ? '' : 's'} custom)` : ''} · ${C.dte_min}–${C.dte_max} DTE${C.min_roc != null ? ` · hurdle ${C.min_roc}% ann.` : ''} · ${new Set(D.rows.map(r => r.symbol)).size} tickers`;
   const b = [];
+  ((D.watchlist && D.watchlist.notes) || []).forEach(n => b.push(n));
   if (D.mock) b.push('Mock data: synthetic numbers for testing the page, not market data.');
   if (!D.recorded) b.push('Weekend run: IV history was not updated.');
   if (!D.earnings_source) b.push('No earnings source configured, so the Earnings column shows "?". Add a Finnhub key to enable it.');
   $('#banners').innerHTML = b.map(t => `<div class="banner">${esc(t)}</div>`).join('');
   [...new Set(D.rows.map(r => r.expiry))].sort().forEach(e => $('#f-exp').insertAdjacentHTML('beforeend', `<option>${e}</option>`));
-  $('#legend').innerHTML = `<b>●</b> = worth a look: liquid, IV elevated, no earnings before expiry. Hover or click a row to see which cells decided it.
-    Press <b>?</b> (or the button at the top) for what each column means and what to look for.`;
+  $('#top3').addEventListener('click', e => { const c = e.target.closest('.card'); if (c) select(c.dataset.key); });
+  const nOwn = Object.keys(C.own_price || {}).length;
+  $('#tab-wheel').textContent = 'Wheel · own price' + (nOwn ? ` (${nOwn})` : '');
+  $('#tabs').addEventListener('click', e => { const t = e.target.closest('button[data-lens]'); if (t && t.dataset.lens !== lens) switchLens(t.dataset.lens); });
+  if (D.watchlist && D.watchlist.source) $('#meta').textContent += ` · watchlist: ${D.watchlist.source}`;
+  setLegend();
   if (D.errors.length) { $('#errs').hidden = false; $('#errlist').innerHTML = D.errors.map(e => `<li>${esc(e)}</li>`).join(''); }
 
   document.querySelectorAll('.bar input, .bar select').forEach(el => el.addEventListener('input', render));
