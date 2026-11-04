@@ -742,7 +742,7 @@ def main():
                 "FROM iv_daily d WHERE d.symbol=? ORDER BY d.date DESC LIMIT 365", (sym,))][::-1]
 
     payload = {
-        "generated": now.strftime("%Y-%m-%d %H:%M ET"), "mock": cfg.mock, "recorded": recorded,
+        "generated": now.strftime("%Y-%m-%d %H:%M ET"), "generated_at": now.isoformat(), "mock": cfg.mock, "recorded": recorded,
         "session": session.isoformat(), "phase": phase,
         "earnings_source": bool(fh_key),
         "config": {"delta": cfg.delta, "dte_min": cfg.dte_min, "dte_max": cfg.dte_max, "min_oi": cfg.min_oi,

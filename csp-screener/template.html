@@ -617,7 +617,8 @@ function buildNav(runs, sess) {
 
 function init() {
   const nCustom = Object.keys(C.custom_delta || {}).length;
-  $('#meta').textContent = `Updated ${D.generated} · short put ≤ ${C.delta.toFixed(2)}Δ${nCustom ? ` (${nCustom} ticker${nCustom === 1 ? '' : 's'} custom)` : ''} · ${C.dte_min}–${C.dte_max} DTE${C.min_roc != null ? ` · hurdle ${C.min_roc}% ann.` : ''} · ${new Set(D.rows.map(r => r.symbol)).size} tickers`;
+  const updatedLocal = () => D.generated_at ? new Date(D.generated_at).toLocaleString([], {month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit', timeZoneName:'short'}) : D.generated;
+  $('#meta').textContent = `Updated ${updatedLocal()} · short put ≤ ${C.delta.toFixed(2)}Δ${nCustom ? ` (${nCustom} ticker${nCustom === 1 ? '' : 's'} custom)` : ''} · ${C.dte_min}–${C.dte_max} DTE${C.min_roc != null ? ` · hurdle ${C.min_roc}% ann.` : ''} · ${new Set(D.rows.map(r => r.symbol)).size} tickers`;
   const b = [];
   ((D.watchlist && D.watchlist.notes) || []).forEach(n => b.push(n));
   if (D.mock) b.push('Mock data: synthetic numbers for testing the page, not market data.');
