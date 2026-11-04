@@ -587,6 +587,7 @@ function switchLens(l) {
 // ---- history navigation (manifest.js lists the saved sessions, newest first) ----
 let navOlder = null, navNewer = null;
 const fmtDay = d => new Date(d + 'T12:00:00').toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'});
+const fmtShort = d => new Date(d + 'T12:00:00').toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric'});
 const runHref = (runs, d) => ROOT + (d === runs[0].d ? 'index.html' : 'runs/' + d + '.html');
 function loadNav(sess) {
   const s = document.createElement('script');
@@ -606,15 +607,22 @@ function buildNav(runs, sess) {
     groups[m].map(r => `<option value="${r.d}"${r.d === sess ? ' selected' : ''}>${fmtDay(r.d)} · ${r.n} rows · ${r.pass} ●${r.phase && r.phase !== 'close' ? ' · ' + (r.phase === 'off' ? 'off-hours' : r.phase) : ''}</option>`).join('') +
     '</optgroup>').join('');
   const nav = $('#nav');
-  nav.innerHTML = `<button id="nv-old" ${navOlder ? '' : 'disabled'} title="Older run  ([)">← Older</button>` +
-    `<select id="nv-pick" aria-label="Saved run date">${i < 0 ? '<option selected>Unsaved preview</option>' : ''}${opts}</select>` +
-    `<button id="nv-new" ${navNewer ? '' : 'disabled'} title="Newer run  (])">Newer →</button>` +
+  nav.innerHTML = (i > 0 ? `<span class="mute">Viewing the snapshot from ${fmtDay(sess)}</span>` : '') +
     (i === 0 && D.recorded !== false ? '' : `<a href="${ROOT}index.html">Latest</a>`) +
-    (i > 0 ? `<span class="mute">Viewing the snapshot from ${fmtDay(sess)}</span>` : '');
+    `<button id="nv-old" ${navOlder ? '' : 'disabled'} title="Older run  ([)" aria-label="Older run">←</button>` +
+    `<select id="nv-pick" aria-label="Saved run date">${i < 0 ? '<option selected>Unsaved preview</option>' : ''}${opts}</select>` +
+    `<button id="nv-new" ${navNewer ? '' : 'disabled'} title="Newer run  (])" aria-label="Newer run">→</button>`;
   nav.hidden = false;
   $('#nv-old').onclick = () => navOlder && go(navOlder);
   $('#nv-new').onclick = () => navNewer && go(navNewer);
-  $('#nv-pick').onchange = e => go({d: e.target.value});
+  // closed picker shows just the date; the open list shows the full detail
+  const pick = $('#nv-pick'), setText = long => [...pick.options].forEach(o => { if (o.dataset.s) o.textContent = long ? o.dataset.l : o.dataset.s; });
+  [...pick.options].forEach(o => { if (o.value && o.value !== 'Unsaved preview' && /^\d{4}-/.test(o.value)) { o.dataset.l = o.textContent; o.dataset.s = fmtShort(o.value); } });
+  setText(false);
+  pick.addEventListener('mousedown', () => setText(true));
+  pick.addEventListener('focus', () => setText(true));
+  pick.addEventListener('blur', () => setText(false));
+  pick.onchange = e => { setText(false); go({d: e.target.value}); };
 }
 
 function init() {
