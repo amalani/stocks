@@ -65,7 +65,8 @@ python3 screener.py --rerender
 ```
 
 `--mock` writes to `public-mock/` (separate from `public/`), so it never touches the live page. Add `--mock` to
-`--rerender` to rebuild the mock pages.
+`--rerender` to rebuild the mock pages. This only affects the machine you run it on; to update the NAS, use
+`./deploy.sh --rerender` there (see "Updating the NAS after pushing changes").
 
 ## Daily run + serving
 
@@ -96,6 +97,26 @@ on the NAS; nginx never sees them.
 5. Schedule `docker compose run --rm screener` in the NAS task scheduler: weekdays 1:30pm Pacific (= 4:30pm ET;
    Pacific and Eastern are always 3 hours apart). Assumes the NAS clock is on Pacific time.
 6. On-demand refresh: run the same command over SSH. The page is static, so there is no refresh button.
+
+### Updating the NAS after pushing changes
+
+`public/` is gitignored, so the Mac and the NAS each have their own copy; rerendering on the Mac does not change what the
+NAS serves. Run `deploy.sh` on the NAS (it does `git pull --ff-only`, `docker compose up -d web`, then the option you pick):
+
+```
+./deploy.sh              # code change only; the next scheduled run uses the new screener.py
+./deploy.sh --run        # also run the screener now (fresh Tradier data + page)
+./deploy.sh --rerender   # template.html-only change: rebuild every saved page from stored data (no API calls)
+```
+
+nginx serves `public/` straight from disk, so no web restart is needed; refresh the browser. The manual equivalent of
+`--rerender` is:
+
+```
+docker compose run --rm screener sh -c "pip install -q --disable-pip-version-check tzdata && python screener.py --rerender"
+```
+
+(The full `sh -c` string is needed because a command after the service name replaces the compose `command:` entirely.)
 
 Notes: the job `pip install`s `tzdata` each run (slim Python images may lack timezone data); bake it into a small
 Dockerfile if the extra seconds bother you. Saved per-run pages in `public/runs/` are served too.
