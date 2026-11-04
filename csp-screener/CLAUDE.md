@@ -70,3 +70,12 @@ Still to check:
 - Thresholds are CLI flags with defaults in `argparse`; surface any new threshold in the page legend too.
 - The sibling folder `../options-tracker-sheet/` is Google Apps Script for the owner's position-tracker spreadsheet.
   Leave it alone unless asked.
+
+## Page UX notes (template.html)
+- Default sort is `passes` desc then ROC: "Worth a look" rows first, the rest dimmed, with group header rows.
+- `cols[].chk(r)` marks the cells that decide the ● (spread, OI, IV Rank or IV/RV, earnings). They light up green/red/amber on
+  row hover/selection. **Keep these in sync with the `liquid` / `rich` / `passes` logic in `screener.py`.**
+- A selected row is keyed `SYMBOL|expiry`. Its details panel is sticky at the bottom of the window (checklist + IV history charts).
+- The help drawer (`? How to read this`, or the `?` key) is built in `helpHTML()` from `config`, so thresholds there never drift.
+- "Rows per ticker" (All / Best ROC / Nearest 14 DTE) is client-side only; `PREF_DTE` is a JS constant, not a CLI flag.
+- After editing the template run `python3 screener.py --rerender` (or `--mock --rerender`) to apply it to saved pages.

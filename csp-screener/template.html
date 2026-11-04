@@ -28,6 +28,8 @@
 }
 :root[data-theme=light]{color-scheme:light}
 .top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.tools{display:flex;gap:10px;align-items:flex-start}
+.helpbtn{margin-top:4px;padding:4px 10px;font-size:12px;font-weight:600}
 .theme{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-top:4px}
 .theme button{border:0;border-radius:0;padding:4px 10px;font-size:12px;color:var(--mute)}
 .theme button+button{border-left:1px solid var(--line)}
@@ -40,10 +42,11 @@ h3{font-size:13px;margin:0 0 6px;font-weight:600}
 .mute{color:var(--mute)}
 .meta{color:var(--mute);font-size:13px;margin-bottom:14px}
 .banner{background:var(--warnbg);color:var(--warn);padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:13px}
-.bar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:end;margin-bottom:12px}
+.bar{display:flex;flex-wrap:wrap;gap:10px 12px;align-items:end;margin-bottom:12px}
 .bar label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mute)}
 .bar label.chk{flex-direction:row;align-items:center;gap:6px;color:var(--ink);font-size:13px;padding-bottom:6px}
 input[type=text],input[type=number],select{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit;width:110px}
+.bar select{width:auto}
 .spacer{flex:1}
 button{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font:inherit;cursor:pointer}
 button:hover{background:var(--hover)}
@@ -66,27 +69,77 @@ td.bad{color:var(--bad)}
 .tag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:12px}
 .tag.bad{background:var(--badbg);color:var(--bad)}
 .empty{padding:28px;text-align:center;color:var(--mute)}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-top:16px}
-.panel .head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
-.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:18px}
+
+/* shortlist grouping: ● rows first, the rest dimmed */
+tbody tr.dim td{opacity:.58}
+tbody tr.dim:hover td,tbody tr.dim.sel td{opacity:1}
+tbody tr.grp{cursor:default}
+tbody tr.grp:hover{background:none}
+tr.grp td{background:var(--bg);color:var(--mute);font-size:12px;font-weight:600;text-align:left;padding:6px 10px}
+
+/* the cells that decide ●: shown on hover / selection */
+td[data-chk]::after{display:inline-block;width:1em;margin-left:4px;text-align:left;visibility:hidden}
+td[data-chk=ok]::after{content:"✓"}
+td[data-chk=no]::after{content:"✗"}
+td[data-chk=na]::after{content:""}
+tbody tr:hover td[data-chk]::after,tbody tr.sel td[data-chk]::after{visibility:visible}
+tbody tr:hover td[data-chk=ok],tbody tr.sel td[data-chk=ok]{background:var(--goodbg);box-shadow:inset 0 -2px 0 var(--good)}
+tbody tr:hover td[data-chk=no],tbody tr.sel td[data-chk=no]{background:var(--badbg);box-shadow:inset 0 -2px 0 var(--bad)}
+tbody tr:hover td[data-chk=na],tbody tr.sel td[data-chk=na]{background:var(--warnbg);box-shadow:inset 0 -2px 0 var(--warn)}
+
+/* details panel: pinned to the bottom of the window so the table stays visible above it */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-top:16px;
+  position:sticky;bottom:10px;z-index:5;max-height:50vh;overflow:auto;box-shadow:0 8px 28px rgba(0,0,0,.18)}
+.panel .head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
+.panel .head button{padding:2px 8px}
+.dgrid{display:grid;grid-template-columns:minmax(250px,330px) 1fr;gap:20px}
+@media (max-width:860px){.dgrid{grid-template-columns:1fr}}
+.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px}
+.checks{list-style:none;margin:0;padding:0;display:grid;gap:9px}
+.checks li{display:grid;grid-template-columns:20px 1fr;gap:6px;font-size:13px}
+.checks .ic{font-weight:700}
+.checks .d{display:block;color:var(--mute);font-size:12px}
+.s-ok{color:var(--good)} .s-no{color:var(--bad)} .s-na{color:var(--warn)}
+.take{margin-top:12px;font-size:12px;color:var(--mute);line-height:1.55}
+.take b{color:var(--ink);font-weight:600}
 svg text{font:11px system-ui,sans-serif;fill:var(--mute)}
 svg .grid{stroke:var(--line);stroke-width:1}
 svg .ln{fill:none;stroke-width:2;stroke-linejoin:round}
 .legend{margin-top:18px;font-size:12px;color:var(--mute);line-height:1.6}
 .legend b{color:var(--ink);font-weight:600}
 details{margin-top:12px;font-size:13px}
+
+/* help drawer */
+#scrim{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:30}
+#help{position:fixed;top:0;right:0;bottom:0;width:min(460px,100vw);background:var(--panel);border-left:1px solid var(--line);
+  z-index:31;overflow:auto;padding:18px 22px 40px;box-shadow:-10px 0 30px rgba(0,0,0,.2)}
+#help .row{display:flex;justify-content:space-between;align-items:center}
+#help h2{font-size:16px;margin:0}
+#help h4{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mute);margin:22px 0 8px}
+#help ol{padding-left:20px;margin:0;display:grid;gap:9px}
+#help dl{margin:0}
+#help dt{font-weight:600;margin-top:12px}
+#help dd{margin:2px 0 0;color:var(--mute);font-size:13px}
+#help p{margin:6px 0;color:var(--mute);font-size:13px}
 </style>
 </head>
 <body>
 <main>
   <div class="top"><h1>CSP Screener</h1>
-    <div class="theme" id="theme"><button data-t="light">Light</button><button data-t="system">System</button><button data-t="dark">Dark</button></div></div>
+    <div class="tools">
+      <button id="helpbtn" class="helpbtn" title="Press ? at any time">? How to read this</button>
+      <div class="theme" id="theme"><button data-t="light">Light</button><button data-t="system">System</button><button data-t="dark">Dark</button></div>
+    </div></div>
   <div class="meta" id="meta"></div>
   <div id="banners"></div>
 
   <div class="bar">
     <label>Ticker<input type="text" id="f-q" placeholder="e.g. AMD"></label>
     <label>Expiry<select id="f-exp"><option value="">All</option></select></label>
+    <label>Rows per ticker<select id="f-per">
+      <option value="">All expiries</option>
+      <option value="roc">Best ROC</option>
+      <option value="dte">Nearest 14 DTE</option></select></label>
     <label>Min ann. ROC %<input type="number" id="f-roc" min="0" step="1" placeholder="0"></label>
     <label>Min IV Rank<input type="number" id="f-ivr" min="0" max="100" step="5" placeholder="0"></label>
     <label class="chk"><input type="checkbox" id="f-pass"> Passing only</label>
@@ -105,9 +158,13 @@ details{margin-top:12px;font-size:13px}
   <details id="errs" hidden><summary class="mute">Skipped / errors</summary><ul id="errlist"></ul></details>
 </main>
 
+<div id="scrim" hidden></div>
+<aside id="help" role="dialog" aria-label="How to read this page" hidden></aside>
+
 <script>
 const DATA = /*__DATA__*/null;
 const D = DATA, C = D.config;
+const PREF_DTE = 14;
 const $ = s => document.querySelector(s);
 (function(){
   const root = document.documentElement;
@@ -126,32 +183,41 @@ const num = (v, d = 2) => v == null ? '–' : Number(v).toFixed(d);
 const pct = (v, d = 1) => v == null ? '–' : Number(v).toFixed(d) + '%';
 
 // ---- columns ----------------------------------------------------------
+// chk(r) -> 'ok' | 'no' | 'na' | null marks the cells that decide the ● (highlighted on hover/selection).
 const cols = [
-  {k:'passes', label:'', tip:'Passes: liquid, IV rich, no earnings in window', html:r => r.passes ? '<span class="dot">●</span>' : ''},
+  {k:'passes', label:'●', tip:'Worth a look: liquid, IV elevated, no earnings before expiry. Click to group these first.', html:r => r.passes ? '<span class="dot">●</span>' : ''},
   {k:'symbol', label:'Ticker', left:true, html:r => `<b>${esc(r.symbol)}</b>`},
   {k:'spot', label:'Spot', html:r => num(r.spot)},
   {k:'expiry', label:'Expiry', html:r => `${r.expiry.slice(5)} <span class="mute">${r.dte}d</span>`},
   {k:'strike', label:'Strike', html:r => num(r.strike, r.strike % 1 ? 2 : 0)},
-  {k:'delta', label:'Δ', html:r => num(r.delta)},
+  {k:'delta', label:'Δ', tip:'Put delta (shown positive): a rough assignment probability', html:r => num(r.delta)},
   {k:'mid', label:'Mid', html:r => num(r.mid)},
   {k:'roc', label:'Ann. ROC', tip:'mid / strike × 365 / DTE', cls:() => 'strong', html:r => pct(r.roc)},
   {k:'cushion_pct', label:'Cushion', tip:'(spot − strike) / spot', html:r => pct(r.cushion_pct)},
-  {k:'em_mult', label:'vs EM', tip:'Cushion in units of the 1σ expected move (ATM IV). ≥ 1× = strike is outside the expected move.',
-    cls:r => r.em_mult == null ? '' : r.em_mult >= 1 ? 'good' : 'warn', html:r => r.em_mult == null ? '–' : num(r.em_mult) + '×'},
+  {k:'em_mult', label:'vs EM', tip:'Cushion in units of the 1σ expected move (ATM IV). Around 0.8-0.9× is normal at 0.20Δ; ≥ 1× is further out; below 0.75× is close.',
+    cls:r => r.em_mult == null ? '' : r.em_mult >= 1 ? 'good' : r.em_mult < 0.75 ? 'warn' : '', html:r => r.em_mult == null ? '–' : num(r.em_mult) + '×'},
   {k:'ref_iv', label:'ATM IV', tip:'ATM implied vol of the expiry nearest 21 DTE', html:r => r.ref_iv == null ? '–' : pct(r.ref_iv * 100, 0)},
   {k:'ivr', label:'IV Rank', tip:r => r.ivr == null ? `${r.ivr_n} of ${C.min_history} days of history needed` : `rank over ${r.ivr_n} days`,
+    chk:r => r.ivr == null ? null : (r.ivr >= C.ivr_min ? 'ok' : 'no'),
     cls:r => r.ivr != null && r.ivr >= C.ivr_min ? 'good' : '', html:r => r.ivr == null ? '<span class="mute">–</span>' : num(r.ivr, 0)},
-  {k:'iv_rv', label:'IV/RV', tip:'ATM IV ÷ 30-day realized vol', cls:r => r.iv_rv != null && r.iv_rv >= C.ivrv_min ? 'good' : '', html:r => num(r.iv_rv)},
-  {k:'spread_pct', label:'Spread', tip:'bid-ask as % of mid', cls:r => r.spread_pct == null || r.spread_pct > C.max_spread ? 'bad' : '', html:r => pct(r.spread_pct, 1)},
-  {k:'oi', label:'OI', cls:r => r.oi < C.min_oi ? 'bad' : '', html:r => r.oi.toLocaleString()},
+  {k:'iv_rv', label:'IV/RV', tip:'ATM IV ÷ 30-day realized vol',
+    chk:r => r.ivr != null ? null : (r.iv_rv != null && r.iv_rv >= C.ivrv_min ? 'ok' : 'no'),
+    cls:r => r.iv_rv != null && r.iv_rv >= C.ivrv_min ? 'good' : '', html:r => num(r.iv_rv)},
+  {k:'spread_pct', label:'Spread', tip:'bid-ask as % of mid',
+    chk:r => r.spread_pct != null && r.spread_pct <= C.max_spread ? 'ok' : 'no',
+    cls:r => r.spread_pct == null || r.spread_pct > C.max_spread ? 'bad' : '', html:r => pct(r.spread_pct, 1)},
+  {k:'oi', label:'OI', tip:'Open interest', chk:r => r.oi >= C.min_oi ? 'ok' : 'no',
+    cls:r => r.oi < C.min_oi ? 'bad' : '', html:r => r.oi.toLocaleString()},
   {k:'earnings', label:'Earnings', tip:'Earnings date on/before expiry',
+    chk:r => r.earnings ? 'no' : (r.earn_known ? 'ok' : 'na'),
     html:r => r.earnings ? `<span class="tag bad">${r.earnings.slice(5)}</span>` : (r.earn_known ? '<span class="mute">–</span>' : '<span class="mute" title="No earnings source configured">?</span>')},
   {k:'spark', label:'IV trend', nosort:true, html:r => spark(r.symbol)},
 ];
 
 // ---- state ------------------------------------------------------------
-let sort = {k:'roc', dir:-1};
-let selected = null;
+let sort = {k:'passes', dir:-1};   // shortlist first, then by ROC
+let selected = null;               // "SYMBOL|expiry"
+const keyOf = r => r.symbol + '|' + r.expiry;
 
 function spark(sym) {
   const h = (D.history[sym] || []).filter(p => p.iv != null).slice(-60);
@@ -162,14 +228,33 @@ function spark(sym) {
   return `<svg width="${w}" height="${ht}" viewBox="0 0 ${w} ${ht}"><polyline points="${pts.join(' ')}" fill="none" stroke="var(--c0)" stroke-width="1.5"/><circle cx="${last[0]}" cy="${last[1]}" r="2" fill="var(--c0)"/></svg>`;
 }
 
+const cmpArr = (a, b) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] > b[i] ? 1 : -1; return 0; };
+
 function filtered() {
   const q = $('#f-q').value.trim().toUpperCase(), exp = $('#f-exp').value;
   const roc = parseFloat($('#f-roc').value) || 0, ivr = parseFloat($('#f-ivr').value) || 0;
-  return D.rows.filter(r =>
+  const rows = D.rows.filter(r =>
     (!q || r.symbol.includes(q)) && (!exp || r.expiry === exp) && r.roc >= roc &&
     (!ivr || (r.ivr != null && r.ivr >= ivr)) &&
     (!$('#f-pass').checked || r.passes) && (!$('#f-earn').checked || !r.earnings) &&
     (!$('#f-liq').checked || r.liquid));
+  const per = $('#f-per').value;
+  if (!per) return rows;
+  // One row per ticker: shortlist rows win, then best ROC (or the expiry nearest 14 DTE).
+  const score = r => per === 'roc' ? [r.passes ? 1 : 0, r.roc] : [r.passes ? 1 : 0, -Math.abs(r.dte - PREF_DTE), r.roc];
+  const best = new Map();
+  rows.forEach(r => { const b = best.get(r.symbol); if (!b || cmpArr(score(r), score(b)) > 0) best.set(r.symbol, r); });
+  return [...best.values()];
+}
+
+function rowHTML(r, anyPass) {
+  const cls = [selected === keyOf(r) ? 'sel' : '', anyPass && !r.passes ? 'dim' : ''].join(' ');
+  return `<tr data-key="${esc(keyOf(r))}" class="${cls}">` + cols.map(c => {
+    const klass = [c.left ? 'l' : '', c.cls ? c.cls(r) : ''].join(' ');
+    const tip = typeof c.tip === 'function' ? c.tip(r) : '';
+    const chk = c.chk ? c.chk(r) : null;
+    return `<td class="${klass}"${chk ? ` data-chk="${chk}"` : ''}${tip ? ` title="${esc(tip)}"` : ''}>${c.html(r)}</td>`;
+  }).join('') + '</tr>';
 }
 
 function render() {
@@ -180,23 +265,28 @@ function render() {
     if (bv == null) return -1;
     return (av > bv ? 1 : av < bv ? -1 : 0) * sort.dir || (b.roc - a.roc);
   });
+  const nPass = rows.filter(r => r.passes).length, anyPass = nPass > 0;
+  const grouped = sort.k === 'passes' && sort.dir < 0 && anyPass;
   $('#tbl thead').innerHTML = '<tr>' + cols.map(c =>
     `<th class="${c.left ? 'l' : ''} ${c.nosort ? 'nosort' : ''}" data-k="${c.k}" title="${esc(typeof c.tip === 'string' ? c.tip : '')}">${c.label}<span class="ar">${sort.k === c.k ? (sort.dir > 0 ? '▲' : '▼') : ''}</span></th>`).join('') + '</tr>';
-  $('#tbl tbody').innerHTML = rows.length ? rows.map((r, i) =>
-    `<tr data-sym="${esc(r.symbol)}" class="${selected === r.symbol ? 'sel' : ''}">` + cols.map(c => {
-      const cls = [c.left ? 'l' : '', c.cls ? c.cls(r) : ''].join(' ');
-      const tip = typeof c.tip === 'function' ? c.tip(r) : '';
-      return `<td class="${cls}"${tip ? ` title="${esc(tip)}"` : ''}>${c.html(r)}</td>`;
-    }).join('') + '</tr>').join('') :
+  let html = '', prev = null;
+  rows.forEach(r => {
+    if (grouped && r.passes !== prev) {
+      html += `<tr class="grp"><td colspan="${cols.length}">${r.passes ? `Worth a look · ${nPass}` : `Everything else · ${rows.length - nPass}`}</td></tr>`;
+      prev = r.passes;
+    }
+    html += rowHTML(r, anyPass);
+  });
+  $('#tbl tbody').innerHTML = rows.length ? html :
     `<tr><td colspan="${cols.length}" class="empty">Nothing matches these filters.</td></tr>`;
-  $('#count').textContent = `${rows.length} of ${D.rows.length} rows · ${D.rows.filter(r => r.passes).length} passing`;
+  $('#count').textContent = `${rows.length} row${rows.length === 1 ? '' : 's'} · ${nPass} worth a look`;
 }
 
-// ---- history panel ----------------------------------------------------
+// ---- details panel ----------------------------------------------------
 function chart(title, series, fmt) {
   const all = series.flatMap(s => s.pts);
   if (all.length < 2) return `<div><h3>${title}</h3><p class="mute">Not enough history yet. It builds one point per weekday the job runs.</p></div>`;
-  const W = 560, H = 190, L = 42, R = 70, T = 10, B = 22;
+  const W = 440, H = 180, L = 40, R = 64, T = 10, B = 22;
   let x0 = Math.min(...all.map(p => p.t)), x1 = Math.max(...all.map(p => p.t));
   let y0 = Math.min(...all.map(p => p.v)), y1 = Math.max(...all.map(p => p.v));
   const pad = (y1 - y0) * 0.12 || Math.abs(y1) * 0.1 || 1; y0 -= pad; y1 += pad;
@@ -221,20 +311,87 @@ function chart(title, series, fmt) {
   return `<div><h3>${title}</h3><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(title)}">${g}</svg></div>`;
 }
 
-function showHistory(sym) {
-  selected = sym;
-  const h = D.history[sym] || [];
+// The three tests behind ●, with the actual numbers.
+function checklist(r) {
+  const liq = r.spread_pct != null && r.spread_pct <= C.max_spread && r.oi >= C.min_oi;
+  const items = [
+    {s: liq ? 'ok' : 'no', t: 'Liquid',
+     d: `spread ${pct(r.spread_pct)} (max ${C.max_spread}%) · open interest ${r.oi.toLocaleString()} (min ${C.min_oi})`},
+    {s: r.rich ? 'ok' : 'no', t: 'IV elevated',
+     d: r.ivr != null ? `IV Rank ${num(r.ivr, 0)} (needs ≥ ${C.ivr_min}), over ${r.ivr_n} days of history`
+        : `IV/RV ${num(r.iv_rv)} (needs ≥ ${C.ivrv_min}). IV Rank starts after ${C.min_history} days of history (${r.ivr_n} so far)`},
+    {s: r.earnings ? 'no' : (r.earn_known ? 'ok' : 'na'), t: 'No earnings before expiry',
+     d: r.earnings ? `earnings ${r.earnings} is before ${r.expiry}` : (r.earn_known ? 'none found' : 'unknown: no earnings source is configured, check it yourself')},
+  ];
+  const ic = {ok: '✓', no: '✗', na: '?'};
+  return `<ul class="checks">${items.map(i =>
+    `<li><span class="ic s-${i.s}">${ic[i.s]}</span><span>${i.t}<span class="d">${esc(i.d)}</span></span></li>`).join('')}</ul>`;
+}
+
+function showDetail() {
+  const r = D.rows.find(x => keyOf(x) === selected);
+  if (!r) return;
+  const sym = r.symbol, h = D.history[sym] || [];
   const mk = key => h.filter(p => p[key] != null).map(p => ({t: Date.parse(p.d), v: p[key]}));
   const ivs = h.map(p => p.iv).filter(v => v != null);
-  const r = D.rows.find(x => x.symbol === sym);
   $('#hist').hidden = false;
-  $('#hist').innerHTML = `<div class="head"><b style="font-size:15px">${esc(sym)} history</b>
-    <span class="mute">${ivs.length} day${ivs.length === 1 ? '' : 's'} of IV history${ivs.length ? ` · range ${pct(Math.min(...ivs) * 100, 0)}–${pct(Math.max(...ivs) * 100, 0)}` : ''}${r && r.ivr != null ? ` · IV Rank ${num(r.ivr, 0)}` : ''}</span></div>
-    <div class="charts">
-      ${chart('ATM IV vs 30-day realized vol', [{name: 'IV', pts: mk('iv')}, {name: 'RV', pts: mk('rv')}], v => (v * 100).toFixed(0) + '%')}
-      ${chart(`Best annualized ROC at ≤${C.delta.toFixed(2)}Δ`, [{name: 'ROC', pts: mk('roc')}], v => v.toFixed(0) + '%')}
+  $('#hist').innerHTML = `<div class="head">
+      <span><b style="font-size:15px">${esc(sym)}</b> · ${esc(r.expiry)} (${r.dte}d) · $${num(r.strike, r.strike % 1 ? 2 : 0)} put
+        · <b class="${r.passes ? 's-ok' : 'mute'}">${r.passes ? '● Worth a look' : 'Not on the shortlist'}</b></span>
+      <button id="hx" aria-label="Close details" title="Close (Esc)">✕</button></div>
+    <div class="dgrid">
+      <div>${checklist(r)}
+        <div class="take">Selling 1 contract collects about <b>$${(r.premium).toFixed(0)}</b> on <b>$${r.collateral.toLocaleString()}</b> collateral; break-even <b>$${num(r.strike - r.mid)}</b>.
+        The strike is ${pct(r.cushion_pct)} below spot${r.em_mult != null ? `, ${num(r.em_mult)}× the 1σ expected move (${r.em_mult < 1 ? 'inside' : 'outside'} it)` : ''}.
+        ${ivs.length} day${ivs.length === 1 ? '' : 's'} of IV history${ivs.length ? `, range ${pct(Math.min(...ivs) * 100, 0)}–${pct(Math.max(...ivs) * 100, 0)}` : ''}.</div></div>
+      <div class="charts">
+        ${chart('ATM IV vs 30-day realized vol', [{name: 'IV', pts: mk('iv')}, {name: 'RV', pts: mk('rv')}], v => (v * 100).toFixed(0) + '%')}
+        ${chart(`Best annualized ROC at ≤${C.delta.toFixed(2)}Δ`, [{name: 'ROC', pts: mk('roc')}], v => v.toFixed(0) + '%')}
+      </div>
     </div>`;
-  render();
+  $('#hx').onclick = closeDetail;
+}
+function select(key) {
+  if (selected === key) return closeDetail();
+  selected = key; showDetail(); render();
+}
+function closeDetail() { selected = null; $('#hist').hidden = true; render(); }
+
+// ---- help drawer ------------------------------------------------------
+function helpHTML() {
+  return `<div class="row"><h2>How to read this page</h2><button id="helpx" aria-label="Close help">✕</button></div>
+  <h4>What to look for</h4>
+  <ol>
+    <li><b>Start with the ● rows at the top.</b> They already clear the basics: liquid, IV elevated, no earnings before expiry. Everything else is dimmed.</li>
+    <li><b>Choose among them</b> by Ann. ROC, then check <b>vs EM</b> (more room to the strike) and <b>IV Rank</b> (is IV high for this stock, or is it always high?).</li>
+    <li><b>Hover or click a row.</b> The cells that decided the ● light up green ✓, red ✗ or amber ?, and the panel at the bottom shows the numbers and the IV history.</li>
+    <li><b>Before you trade:</b> confirm the earnings date yourself and check the live bid/ask. This page is a snapshot, and the mid is not a fill.</li>
+  </ol>
+  <h4>Metrics</h4>
+  <dl>
+    <dt>● Worth a look</dt><dd>Spread ≤ ${C.max_spread}% and open interest ≥ ${C.min_oi}; IV Rank ≥ ${C.ivr_min} (or IV/RV ≥ ${C.ivrv_min} until ${C.min_history} days of history exist); no earnings before expiry. A shortlist, not a recommendation.</dd>
+    <dt>Ann. ROC</dt><dd>Premium (mid) ÷ strike, annualized by days to expiry. Compare it across names with similar expiries: very short expiries (a few days) look inflated because a small credit is annualized over days.</dd>
+    <dt>Cushion</dt><dd>How far spot can fall before reaching the strike, as a % of spot.</dd>
+    <dt>vs EM</dt><dd>The cushion in 1σ expected moves (from ATM IV). Around 0.8-0.9× is normal at ${C.delta.toFixed(2)}Δ. At 1× or more the strike sits outside the typical move; below 0.75× (amber) it is close.</dd>
+    <dt>ATM IV</dt><dd>Implied volatility of the at-the-money option about 21 days out, the market's expected yearly move. Higher means fatter premium, but ask why (a selloff? an event?).</dd>
+    <dt>IV Rank</dt><dd>Where today's IV sits between this stock's own low and high in the stored history (0-100). ${C.ivr_min}+ means rich for this stock. Shows – until ${C.min_history} days of history exist.</dd>
+    <dt>IV/RV</dt><dd>ATM IV ÷ the last 30 days' realized vol. Above 1 means options price in more movement than the stock has delivered, which favors sellers.</dd>
+    <dt>Spread</dt><dd>Bid-ask gap as a % of the mid. Small means a limit order near the mid will probably fill.</dd>
+    <dt>OI</dt><dd>Open interest, the contracts outstanding. Low means a thin market.</dd>
+    <dt>Earnings</dt><dd>A date before expiry means gap risk. ? means no earnings source is configured, so check manually.</dd>
+    <dt>Δ, Mid, Strike</dt><dd>Δ is the put's delta (a rough assignment probability), shown as positive. Mid is (bid + ask) ÷ 2.</dd>
+    <dt>IV trend</dt><dd>The last 60 days of ATM IV for that ticker.</dd>
+  </dl>
+  <h4>Controls</h4>
+  <p><b>Rows per ticker</b> shrinks the list: "Best ROC" tends to pick the shortest expiry; "Nearest 14 DTE" keeps the one closest to two weeks. Shortlist rows win either way.</p>
+  <p>Click a column header to sort (click ● to go back to shortlist-first). Click a selected row again to close its details.</p>
+  <p>Keys: <b>?</b> opens this help, <b>Esc</b> closes it or the details panel.</p>`;
+}
+function toggleHelp(force) {
+  const open = force === undefined ? $('#help').hidden : force;
+  if (open && !$('#help').innerHTML) $('#help').innerHTML = helpHTML();
+  $('#help').hidden = !open; $('#scrim').hidden = !open;
+  if (open) { $('#helpx').onclick = () => toggleHelp(false); $('#helpx').focus(); } else $('#helpbtn').focus();
 }
 
 // ---- wiring -----------------------------------------------------------
@@ -256,19 +413,25 @@ function init() {
   if (!D.earnings_source) b.push('No earnings source configured, so the Earnings column shows "?". Add a Finnhub key to enable it.');
   $('#banners').innerHTML = b.map(t => `<div class="banner">${esc(t)}</div>`).join('');
   [...new Set(D.rows.map(r => r.expiry))].sort().forEach(e => $('#f-exp').insertAdjacentHTML('beforeend', `<option>${e}</option>`));
-  $('#legend').innerHTML = `<b>●</b> = passes all of: spread ≤ ${C.max_spread}% and OI ≥ ${C.min_oi}; IV Rank ≥ ${C.ivr_min} (or, until ${C.min_history} days of history exist, IV/RV ≥ ${C.ivrv_min}); no earnings before expiry.<br>
-    <b>Ann. ROC</b> uses the mid price. <b>vs EM</b> = how many 1σ expected moves the strike sits below spot. Click a row for that ticker's IV history.`;
+  $('#legend').innerHTML = `<b>●</b> = worth a look: liquid, IV elevated, no earnings before expiry. Hover or click a row to see which cells decided it.
+    Press <b>?</b> (or the button at the top) for what each column means and what to look for.`;
   if (D.errors.length) { $('#errs').hidden = false; $('#errlist').innerHTML = D.errors.map(e => `<li>${esc(e)}</li>`).join(''); }
 
   document.querySelectorAll('.bar input, .bar select').forEach(el => el.addEventListener('input', render));
   $('#csv').addEventListener('click', csv);
+  $('#helpbtn').addEventListener('click', () => toggleHelp());
+  $('#scrim').addEventListener('click', () => toggleHelp(false));
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { if (!$('#help').hidden) toggleHelp(false); else if (selected) closeDetail(); }
+    else if (e.key === '?' && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) toggleHelp();
+  });
   $('#tbl thead').addEventListener('click', e => {
     const th = e.target.closest('th'); if (!th || th.classList.contains('nosort')) return;
     const k = th.dataset.k;
     sort = {k, dir: sort.k === k ? -sort.dir : (k === 'symbol' || k === 'expiry' ? 1 : -1)};
     render();
   });
-  $('#tbl tbody').addEventListener('click', e => { const tr = e.target.closest('tr[data-sym]'); if (tr) showHistory(tr.dataset.sym); });
+  $('#tbl tbody').addEventListener('click', e => { const tr = e.target.closest('tr[data-key]'); if (tr) select(tr.dataset.key); });
   render();
 }
 init();
