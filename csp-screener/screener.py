@@ -17,6 +17,7 @@ Stdlib only (Python 3.9+).
 """
 import argparse
 import csv
+import hashlib
 import io
 import json
 import math
@@ -502,7 +503,8 @@ def render_page(payload, root=""):
     """root is the path from the page back to the output dir ("" for index.html, "../" for runs/*.html)."""
     blob = json.dumps(payload, separators=(",", ":")).replace("</", "<\\/")
     return ((HERE / "template.html").read_text()
-            .replace("/*__DATA__*/null", blob).replace('/*__ROOT__*/""', json.dumps(root)))
+            .replace("/*__DATA__*/null", blob).replace('/*__ROOT__*/""', json.dumps(root))
+            .replace("/*__ROOTPATH__*/", root))
 
 
 # --------------------------------------------------------------------------
@@ -589,8 +591,25 @@ def migrate_runs(out):
         print(f"migrated legacy runs into {len(best)} per-session snapshot(s)", file=sys.stderr)
 
 
+def write_pwa(out):
+    """Copy the installable-app files (manifest, service worker, icons) next to the pages."""
+    out.mkdir(parents=True, exist_ok=True)
+    files = sorted((HERE / "pwa").iterdir())
+    # Version = hash of the app files + template, so a changed sw.js byte-wise triggers the browser's update
+    # and the new worker drops the previous cache.
+    h = hashlib.sha1()
+    for f in files + [HERE / "template.html"]:
+        h.update(f.read_bytes())
+    for f in files:
+        data = f.read_bytes()
+        if f.name == "sw.js":
+            data = data.replace(b"/*__VERSION__*/", h.hexdigest()[:10].encode())
+        (out / f.name).write_bytes(data)
+
+
 def rerender(out):
     n = 0
+    write_pwa(out)
     if (out / "runs").is_dir():
         migrate_runs(out)
         for f in sorted((out / "runs").glob("*.json")):
@@ -733,7 +752,7 @@ def main():
         "watchlist": {"source": wl_source, "notes": wl_notes},
         "rows": rows, "wheel": wheel_rows, "history": history, "errors": errors,
     }
-    out.mkdir(parents=True, exist_ok=True)
+    write_pwa(out)
     (out / "latest.json").write_text(json.dumps(payload, indent=1))
     (out / "index.html").write_text(render_page(payload))
     # One snapshot per session (last good run wins); the page's prev/next nav reads manifest.js.

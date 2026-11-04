@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CSP Screener</title>
+<link rel="manifest" href="/*__ROOTPATH__*/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/*__ROOTPATH__*/apple-touch-icon.png">
+<meta name="theme-color" content="#14161a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="CSP">
 <script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
 <style>
 :root{
@@ -202,6 +207,7 @@ details{margin-top:12px;font-size:13px}
 <script>
 const DATA = /*__DATA__*/null;
 const ROOT = /*__ROOT__*/"";   // path from this page to the output dir ("" for index.html, "../" for runs/*.html)
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register(ROOT + 'sw.js').catch(() => {});
 const D = DATA, C = D.config;
 const PREF_DTE = 14;
 const $ = s => document.querySelector(s);

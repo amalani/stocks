@@ -17,6 +17,8 @@ Owner's trading rules the screener encodes (change via CLI flags, not by editing
 - `template.html`: the page. `screener.py` replaces the literal `/*__DATA__*/null` with the JSON payload and writes
   `public/index.html`. Vanilla JS, no CDN, so it works offline on a locked-down server.
 - `watchlist.txt`: tickers, `#` comments. Optional per-ticker max put delta after the ticker (`AMD 0.30`); default is `--delta`.
+- `pwa/`: installable-app files (manifest, `sw.js`, icons), copied into the output dir by `write_pwa()` on every run and
+  `--rerender`. The service worker is network-first (fresh data, cached fallback offline) and registers only over https.
 - Generated and gitignored: `public/` (index.html, latest.json, latest.csv, manifest.js, runs/ snapshots), `public-mock/` (same, for `--mock`),
   `data/screener.db` (live), `data/mock.db`.
 - Secrets: `.env` (gitignored; see `.env.example`). Never print, log, or commit the token.
