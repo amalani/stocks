@@ -56,7 +56,8 @@ Header names are matched loosely (`Ticker`/`Symbol`, `Delta`, `Own`/`Buy`/`Hold`
 
 ## Changing the page (UX-only edits)
 
-Every run also saves `public/runs/<date>_<time>.json` (the data) and a matching `.html`. After editing
+Every persisted run saves one snapshot per trading session, `public/runs/<session-date>.json` (the data) and a matching
+`.html`; the page's **← Older / date picker / Newer →** (or `[` / `]`) walks between them via `public/manifest.js`. After editing
 `template.html`, apply it to the latest page and all saved ones without touching the API or the DB:
 
 ```
@@ -118,6 +119,9 @@ Dockerfile if the extra seconds bother you. Saved per-run pages in `public/runs/
 
 ## Notes
 
-- Weekend runs don't write history.
+- The session is the trading day of the quotes (Tradier `trade_date`), not the clock date. Last run of a session wins, but
+  an off-hours run (weekend, holiday, pre-market, overnight) never replaces an intraday or close run, and an intraday run never
+  replaces a close run. A run that isn't kept only refreshes `index.html` (with a "Preview, not saved" banner): no snapshot, no history.
+  `--asof 'YYYY-MM-DD HH:MM'` (ET) with `--mock` simulates other run times.
 - IV history is only as good as how consistently it runs; a gap just means fewer points.
 - First live Tradier run was on 2026-11-03 (income view only). The Wheel tab and the sheet watchlist have only been tested on mock data and a local CSV, so check the first live run with own prices.

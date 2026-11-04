@@ -107,8 +107,8 @@ def _bs(S, K, T, sigma, kind, r=0.04):
 
 
 class Mock:
-    def __init__(self):
-        self.today = date.today()
+    def __init__(self, today=None):
+        self.today = today or date.today()
 
     def _p(self, sym):
         rng = random.Random(sym)
@@ -498,16 +498,105 @@ def load_env(path):
             os.environ.setdefault(k.strip(), v.strip().strip("'\""))
 
 
-def render_page(payload):
+def render_page(payload, root=""):
+    """root is the path from the page back to the output dir ("" for index.html, "../" for runs/*.html)."""
     blob = json.dumps(payload, separators=(",", ":")).replace("</", "<\\/")
-    return (HERE / "template.html").read_text().replace("/*__DATA__*/null", blob)
+    return ((HERE / "template.html").read_text()
+            .replace("/*__DATA__*/null", blob).replace('/*__ROOT__*/""', json.dumps(root)))
+
+
+# --------------------------------------------------------------------------
+# Per-session snapshots: runs/YYYY-MM-DD.{json,html} (+ manifest.js for the page's prev/next nav)
+# --------------------------------------------------------------------------
+# A "session" is the trading day the quotes belong to, not the wall-clock date. Same-session runs overwrite each
+# other (last run wins) unless the new run is lower quality: a close run beats intraday beats off-hours.
+PHASE_RANK = {"off": 1, "intraday": 2, "close": 3}
+OPEN_T, CLOSE_T = (9, 30), (16, 0)
+
+
+def last_session(now):
+    """Most recent weekday whose regular session has started (ignores holidays; used when quotes carry no date)."""
+    d = now.date()
+    if d.weekday() >= 5 or (now.hour, now.minute) < OPEN_T:
+        d -= timedelta(days=1)
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d
+
+
+def quote_session(quotes, now):
+    """Trading day of the quotes: newest Tradier trade_date (epoch ms), else last_session()."""
+    days = []
+    for q in quotes.values():
+        try:
+            days.append(datetime.fromtimestamp(int(q["trade_date"]) / 1000, ET).date())
+        except (KeyError, TypeError, ValueError, OSError):
+            pass
+    return max(days) if days else last_session(now)
+
+
+def run_phase(now, session):
+    if now.date() == session:
+        if OPEN_T <= (now.hour, now.minute) < CLOSE_T:
+            return "intraday"
+        if (now.hour, now.minute) >= CLOSE_T:
+            return "close"
+    return "off"
+
+
+def saved_rank(out, session):
+    f = out / "runs" / f"{session}.json"
+    try:
+        return PHASE_RANK.get(json.loads(f.read_text()).get("phase"), 0)
+    except (OSError, ValueError):
+        return 0 if not f.exists() else 1
+
+
+def write_manifest(out):
+    runs = []
+    for f in sorted((out / "runs").glob("????-??-??.json"), reverse=True):
+        p = json.loads(f.read_text())
+        runs.append({"d": f.stem, "gen": p["generated"][11:], "phase": p.get("phase"),
+                     "n": len(p["rows"]), "pass": sum(1 for r in p["rows"] if r.get("passes"))})
+    (out / "manifest.js").write_text("window.RUNS=" + json.dumps(runs, separators=(",", ":")) + ";\n")
+    return runs
+
+
+LEGACY_RUN = re.compile(r"^(\d{4}-\d{2}-\d{2})_(\d{4})(-mock)?$")
+
+
+def migrate_runs(out):
+    """Collapse old per-run files (YYYY-MM-DD_HHMM.json) into one snapshot per session, best phase then latest."""
+    runs, best = out / "runs", {}
+    for f in sorted(runs.glob("*.json")):
+        if not LEGACY_RUN.match(f.stem):
+            continue
+        p = json.loads(f.read_text())
+        gen = datetime.strptime(p["generated"][:16], "%Y-%m-%d %H:%M").replace(tzinfo=ET)
+        session = last_session(gen)
+        p.setdefault("session", session.isoformat())
+        p.setdefault("phase", run_phase(gen, session))
+        p["recorded"] = True
+        key = (PHASE_RANK[p["phase"]], p["generated"])
+        if session.isoformat() not in best or key >= best[session.isoformat()][0]:
+            best[session.isoformat()] = (key, p)
+    for f in list(runs.glob("*.json")) + list(runs.glob("*.html")):
+        if LEGACY_RUN.match(f.stem):
+            f.unlink()
+    for session, (_, p) in best.items():
+        (runs / f"{session}.json").write_text(json.dumps(p, separators=(",", ":")))
+    if best:
+        print(f"migrated legacy runs into {len(best)} per-session snapshot(s)", file=sys.stderr)
 
 
 def rerender(out):
     n = 0
-    for f in sorted((out / "runs").glob("*.json")):
-        f.with_suffix(".html").write_text(render_page(json.loads(f.read_text())))
-        n += 1
+    if (out / "runs").is_dir():
+        migrate_runs(out)
+        for f in sorted((out / "runs").glob("*.json")):
+            f.with_suffix(".html").write_text(render_page(json.loads(f.read_text()), "../"))
+            n += 1
+        write_manifest(out)
     if (out / "latest.json").exists():
         (out / "index.html").write_text(render_page(json.loads((out / "latest.json").read_text())))
         n += 1
@@ -535,7 +624,10 @@ def main():
     ap.add_argument("--mock", action="store_true")
     ap.add_argument("--rerender", action="store_true",
                     help="rebuild index.html and every runs/*.html from saved JSON with the current template "
-                         "(no API calls, no DB writes); use after UX-only changes to template.html")
+                         "(no API calls, no DB writes); use after UX-only changes to template.html. Also folds "
+                         "old runs/YYYY-MM-DD_HHMM files into one snapshot per session and rebuilds manifest.js")
+    ap.add_argument("--asof", default=None, metavar="'YYYY-MM-DD HH:MM'",
+                    help="pretend the run happens at this ET time (testing the session/phase logic with --mock)")
     cfg = ap.parse_args()
     if cfg.out is None:
         cfg.out = str(HERE / ("public-mock" if cfg.mock else "public"))
@@ -543,7 +635,7 @@ def main():
     if cfg.rerender:
         return rerender(Path(cfg.out))
 
-    now = datetime.now(ET)
+    now = datetime.strptime(cfg.asof, "%Y-%m-%d %H:%M").replace(tzinfo=ET) if cfg.asof else datetime.now(ET)
     today = now.date()
     # Watchlist: published Google Sheet CSV (WATCHLIST_URL) if set, else watchlist.txt (or --tickers FILE).
     # Per ticker: optional max put delta and optional "own price" (what you'd be happy to pay for the stock).
@@ -566,7 +658,7 @@ def main():
     fh_key = os.environ.get("FINNHUB_KEY") or ((HERE / "finnhub.txt").read_text().strip()
                                               if (HERE / "finnhub.txt").exists() else None)
     if cfg.mock:
-        api, fh_key = Mock(), None
+        api, fh_key = Mock(today), None
         if not con.execute("SELECT 1 FROM iv_daily LIMIT 1").fetchone():
             seed_mock_history(con, symbols, today)
     else:
@@ -577,6 +669,12 @@ def main():
         api = Tradier(token, os.environ.get("TRADIER_BASE_URL", "https://api.tradier.com/v1"))
 
     quotes = api.quotes(symbols)
+    session = quote_session(quotes, now)
+    phase = run_phase(now, session)
+    out = Path(cfg.out)
+    # Persist (snapshot + IV history) unless this session already has a better run, e.g. an overnight preview
+    # must not replace the 4:30pm run. Otherwise it only refreshes index.html / latest.*.
+    recorded = PHASE_RANK[phase] >= saved_rank(out, session)
     rows, wheel_rows, errors, ref = [], [], [], {}
     for sym in symbols:
         try:
@@ -589,7 +687,7 @@ def main():
                         if fh_key else None)
             hist = [r[0] for r in con.execute(
                 "SELECT atm_iv FROM iv_daily WHERE symbol=? AND date<? ORDER BY date DESC LIMIT 252",
-                (sym, today.isoformat()))]
+                (sym, session.isoformat()))]
             target = deltas.get(sym, cfg.delta)
             r, w, ref_iv, rv = screen_symbol(api, sym, spot, cfg, today, earnings, hist, target, owns.get(sym))
             if not r:
@@ -604,16 +702,14 @@ def main():
             errors.append(f"{sym}: {ex}")
             print(f"{sym:6} ERROR {ex}", file=sys.stderr)
 
-    # Only record history on weekdays so weekend re-runs don't add duplicate points.
-    recorded = today.weekday() < 5
     if recorded:
         for sym, (iv, rv, spot) in ref.items():
             if iv:
                 con.execute("INSERT OR REPLACE INTO iv_daily VALUES (?,?,?,?,?)",
-                            (today.isoformat(), sym, iv, rv, spot))
+                            (session.isoformat(), sym, iv, rv, spot))
         for r in rows:
             con.execute("INSERT OR REPLACE INTO picks VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                        (today.isoformat(), r["symbol"], r["expiry"], r["dte"], r["strike"], r["delta"],
+                        (session.isoformat(), r["symbol"], r["expiry"], r["dte"], r["strike"], r["delta"],
                          r["mid"], r["iv"], r["roc"], r["cushion_pct"], r["spot"]))
         con.commit()
 
@@ -628,6 +724,7 @@ def main():
 
     payload = {
         "generated": now.strftime("%Y-%m-%d %H:%M ET"), "mock": cfg.mock, "recorded": recorded,
+        "session": session.isoformat(), "phase": phase,
         "earnings_source": bool(fh_key),
         "config": {"delta": cfg.delta, "dte_min": cfg.dte_min, "dte_max": cfg.dte_max, "min_oi": cfg.min_oi,
                    "max_spread": cfg.max_spread, "ivr_min": cfg.ivr_min, "ivrv_min": cfg.ivrv_min,
@@ -636,16 +733,18 @@ def main():
         "watchlist": {"source": wl_source, "notes": wl_notes},
         "rows": rows, "wheel": wheel_rows, "history": history, "errors": errors,
     }
-    out = Path(cfg.out)
     out.mkdir(parents=True, exist_ok=True)
     (out / "latest.json").write_text(json.dumps(payload, indent=1))
     (out / "index.html").write_text(render_page(payload))
-    # Keep a snapshot of every run so UX changes can be re-applied to old pages (--rerender).
+    # One snapshot per session (last good run wins); the page's prev/next nav reads manifest.js.
+    # Kept as JSON too so UX changes can be re-applied to old pages (--rerender).
     runs = out / "runs"
     runs.mkdir(exist_ok=True)
-    stamp = now.strftime("%Y-%m-%d_%H%M") + ("-mock" if cfg.mock else "")
-    (runs / f"{stamp}.json").write_text(json.dumps(payload, separators=(",", ":")))
-    (runs / f"{stamp}.html").write_text(render_page(payload))
+    migrate_runs(out)
+    if recorded:
+        (runs / f"{session}.json").write_text(json.dumps(payload, separators=(",", ":")))
+        (runs / f"{session}.html").write_text(render_page(payload, "../"))
+    write_manifest(out)
     with open(out / "latest.csv", "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(CSV_COLS)

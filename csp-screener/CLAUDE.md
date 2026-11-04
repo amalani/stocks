@@ -17,7 +17,7 @@ Owner's trading rules the screener encodes (change via CLI flags, not by editing
 - `template.html`: the page. `screener.py` replaces the literal `/*__DATA__*/null` with the JSON payload and writes
   `public/index.html`. Vanilla JS, no CDN, so it works offline on a locked-down server.
 - `watchlist.txt`: tickers, `#` comments. Optional per-ticker max put delta after the ticker (`AMD 0.30`); default is `--delta`.
-- Generated and gitignored: `public/` (index.html, latest.json, latest.csv, runs/ snapshots), `public-mock/` (same, for `--mock`),
+- Generated and gitignored: `public/` (index.html, latest.json, latest.csv, manifest.js, runs/ snapshots), `public-mock/` (same, for `--mock`),
   `data/screener.db` (live), `data/mock.db`.
 - Secrets: `.env` (gitignored; see `.env.example`). Never print, log, or commit the token.
 
@@ -46,7 +46,13 @@ payload JSON → `template.html`.
 - `mid_iv` is a decimal (0.35). `norm_iv` tolerates percent-style values and treats 0 as missing.
 - IV Rank reference = ATM IV of the in-window expiry nearest 21 DTE, ranked against that ticker's own stored history.
   Tradier has no IV history, so rank shows "–" until `--min-history` (20) days exist; the ● pass test falls back to IV/RV.
-- History is only written on weekdays (ET). Same-day re-runs overwrite (primary key date+symbol). Mock uses a separate DB.
+- History and `runs/<session>.{json,html}` are keyed by the *session* (trading day of the quotes' `trade_date`, fallback
+  `last_session()`), not the wall-clock date. Last run wins, guarded by phase: close (≥4pm ET) > intraday > off (weekend/holiday/
+  pre-market/overnight); a lower phase never overwrites a higher one and is only a preview (`recorded` false: index.html and
+  latest.* refresh, no DB rows, snapshot or manifest change). `--asof` fakes the run time for tests. Mock uses a separate DB.
+- `manifest.js` (`window.RUNS`, newest first) is rebuilt from `runs/*.json` on every run and `--rerender`; pages load it by
+  `<script src>` (works on file://) so old pages never need re-rendering for nav. `--rerender` also folds legacy
+  `YYYY-MM-DD_HHMM` files into per-session snapshots. Existing DB rows written by old pre-market runs are not migrated.
 - Earnings come from Finnhub only if `FINNHUB_KEY` is set; otherwise `earn_known` is false and the column shows "?"
   (unknown earnings does NOT block the ● mark; the page banner says so).
 - `json.dumps(...).replace("</", "<\\/")` is needed when embedding JSON in the HTML. Keep it.
@@ -90,6 +96,8 @@ Still to check:
 - A selected row is keyed `SYMBOL|expiry`. Its details panel is sticky at the bottom of the window: checklist, the strike
   ladder (`ladderHTML`, greyed rows are above the target delta), then IV history charts. Saved runs from before the ladder
   existed have no `ladder`/`target_delta`; the template guards for that (`tgt()`).
+- History nav (`loadNav`/`buildNav`): ← Older / month-grouped date picker / Newer → / Latest and `[` `]` keys, built from
+  `window.RUNS`; `ROOT` is `""` for index.html and `"../"` for runs/*.html (injected by `render_page`). Missing manifest = no nav.
 - The help drawer (`? How to read this`, or the `?` key) is built in `helpHTML()` from `config`, so thresholds there never drift.
 - "Rows per ticker" (All / Best ROC / Nearest 14 DTE) is client-side only; `PREF_DTE` is a JS constant, not a CLI flag.
 - After editing the template run `python3 screener.py --rerender` (or `--mock --rerender`) to apply it to saved pages.
