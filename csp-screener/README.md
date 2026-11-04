@@ -28,6 +28,32 @@ python3 screener.py --mock     # fake data, for trying the page (uses data/mock.
 python3 screener.py --help     # delta, DTE window, liquidity and IV thresholds
 ```
 
+## How the Google Sheet fits in
+
+Two separate things can live in your spreadsheet. Only the first one talks to the screener.
+
+| | Screener Watchlist tab | Position tracker (`../options-tracker-sheet/`) |
+|---|---|---|
+| Purpose | What to scan, and your own prices | What you have open (positions, P&L) |
+| Direction | Sheet to screener (read-only, via published CSV) | Apps Script pulls Tradier quotes into the sheet |
+| Contents | `Ticker`, `Max delta`, `Own price` | Your trades; never published |
+
+Flow: edit the Screener Watchlist tab, then the next screener run (cron, NAS schedule or on demand) fetches the
+published CSV, scans those tickers and rebuilds the page. The screener never writes back to the sheet and never sees
+your positions, so open puts and collateral are not reflected on the page yet (see Ideas in `CLAUDE.md`).
+
+How the columns drive the tabs:
+
+- **Max delta** (blank = 0.20): the target delta for that ticker on the **Income** tab. Strikes are chosen at or below it.
+- **Own price** (blank = no wheel row): the price you would be happy to own the stock at. Tickers with a value also appear
+  on the **Wheel** tab, where the strike is chosen from that price instead of delta. A ticker can have both.
+- Typical use: pick candidates on the page, place the trade, then record it in your position tracker as before.
+  When you decide you are happy owning a name at a new level, change its Own price and re-run.
+
+Tips: keep only tickers and prices in the published tab (the URL is unauthenticated); changes take up to ~5 minutes to
+reach the published CSV; if the sheet cannot be read the run uses `watchlist.txt` and a banner on the page says so.
+Header names are matched loosely (`Ticker`/`Symbol`, `Delta`, `Own`/`Buy`/`Hold`/`Price`).
+
 ## Changing the page (UX-only edits)
 
 Every run also saves `public/runs/<date>_<time>.json` (the data) and a matching `.html`. After editing
@@ -94,4 +120,4 @@ Dockerfile if the extra seconds bother you. Saved per-run pages in `public/runs/
 
 - Weekend runs don't write history.
 - IV history is only as good as how consistently it runs; a gap just means fewer points.
-- Not yet run against live Tradier. Mock mode exercises all the parsing and the page, but check the first live run.
+- First live Tradier run was on 2026-11-03 (income view only). The Wheel tab and the sheet watchlist have only been tested on mock data and a local CSV, so check the first live run with own prices.
