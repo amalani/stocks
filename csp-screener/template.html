@@ -63,6 +63,7 @@ button:hover{background:var(--hover)}
 .tablewrap{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow-x:auto}
 table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
 th,td{padding:7px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line)}
+.tablewrap.main{overflow:auto;max-height:calc(100vh - 90px)}
 th.l,td.l{text-align:left}
 th{font-size:12px;font-weight:600;color:var(--mute);cursor:pointer;user-select:none;position:sticky;top:0;background:var(--panel)}
 th.nosort{cursor:default}
@@ -193,7 +194,7 @@ details{margin-top:12px;font-size:13px}
     <button id="csv">Download CSV</button>
   </div>
 
-  <div class="tablewrap"><table id="tbl"><thead></thead><tbody></tbody></table></div>
+  <div class="tablewrap main"><table id="tbl"><thead></thead><tbody></tbody></table></div>
 
   <div class="panel" id="hist" hidden></div>
 
