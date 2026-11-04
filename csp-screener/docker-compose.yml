@@ -21,6 +21,8 @@ services:
     environment: { TZ: America/Los_Angeles }
     command: sh -c "pip install -q --disable-pip-version-check tzdata && python screener.py"
     profiles: ["job"]                       # not started by `docker compose up`
+    networks:
+      - internal                          # pinned subnet, outbound internet; avoids creating the unused default network
 
 networks:
   internal:
