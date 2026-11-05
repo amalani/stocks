@@ -728,7 +728,7 @@ function init() {
   const phaseNote = live ? (D.phase === 'intraday' ? ' (intraday)' : ' (off-hours)') : '';
   $('#meta').title = live ? (D.phase === 'intraday' ? 'Intraday snapshot: quotes are mid-session, and the close run replaces it.' : 'Taken outside market hours: quotes may be stale until a session run replaces it.') : '';
   const updatedLocal = () => D.generated_at ? new Date(D.generated_at).toLocaleString([], {month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit', timeZoneName:'short'}) : D.generated;
-  $('#meta').textContent = `Updated ${updatedLocal()}${phaseNote} · short put ≤ ${C.delta.toFixed(2)}Δ${nCustom ? ` (${nCustom} ticker${nCustom === 1 ? '' : 's'} custom)` : ''} · ${C.dte_min}–${C.dte_max} DTE${C.min_roc != null ? ` · hurdle ${C.min_roc}% ann.` : ''} · ${new Set(D.rows.map(r => r.symbol)).size} tickers`;
+  $('#meta').textContent = `Updated ${updatedLocal()}${phaseNote} · short put ≤ ${C.delta.toFixed(2)}Δ${nCustom ? ` (${nCustom} ticker${nCustom === 1 ? '' : 's'} custom)` : ''} · ${C.dte_min}–${C.dte_max} DTE${C.min_roc != null ? ` · hurdle ${C.min_roc}% ann.` : ''} · ${new Set(D.rows.map(r => r.symbol)).size} tickers${D.elapsed_s != null ? ` · ran in ${D.elapsed_s < 90 ? Math.round(D.elapsed_s) + 's' : (D.elapsed_s / 60).toFixed(1) + ' min'}${D.only ? ' (' + D.only + ' only)' : ''}` : ''}`;
   (D.wheel || []).forEach(r => { r.spot_vs_own = r.own_price > 0 ? (r.spot / r.own_price - 1) * 100 : null; });
   const b = [];
   const ageH = D.generated_at ? (Date.now() - new Date(D.generated_at)) / 36e5 : null;

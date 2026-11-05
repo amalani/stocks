@@ -30,6 +30,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -769,6 +770,9 @@ def main():
                     help="refresh just one part of the page: 'puts' = Income + Wheel tabs, 'cc' = Covered calls tab "
                          "(only tickers with a cost basis are fetched). The other part is carried over from the "
                          "session's last saved run, so the page stays complete. Default: everything")
+    ap.add_argument("--workers", type=int, default=4,
+                    help="tickers screened in parallel (default 4; Tradier allows ~120 market-data calls/min, "
+                         "so lower this if you see 429 retries)")
     ap.add_argument("--min-history", type=int, default=20, help="days of IV history before IV Rank is shown")
     ap.add_argument("--out", default=None, help="output dir (default public/, or public-mock/ with --mock)")
     ap.add_argument("--db", default=None)
@@ -861,7 +865,13 @@ def main():
     for k, on in (("puts", do_puts), ("cc", do_cc)):
         if on:
             leg_times[k] = now.isoformat()
-    for sym in symbols:
+    hists = {sym: [r[0] for r in con.execute(   # read here: the sqlite connection stays on the main thread
+        "SELECT atm_iv FROM iv_daily WHERE symbol=? AND date<? ORDER BY date DESC LIMIT 252",
+        (sym, session.isoformat()))] for sym in symbols}
+
+    def work(sym):
+        """Screen one ticker; touches no shared state (results are merged in watchlist order below)."""
+        err, r, w, c, refv = [], [], [], [], None
         try:
             q = quotes.get(sym)
             spot = float(q.get("last") or q.get("close") or q.get("prevclose")) if q else None
@@ -870,31 +880,39 @@ def main():
             earnings = (finnhub_earnings(fh_key, sym, today.isoformat(),
                                          (today + timedelta(days=max(cfg.dte_max, cfg.cc_dte_max if sym in costs else 0) + 2)).isoformat())
                         if fh_key else None)
-            hist = [r[0] for r in con.execute(
-                "SELECT atm_iv FROM iv_daily WHERE symbol=? AND date<? ORDER BY date DESC LIMIT 252",
-                (sym, session.isoformat()))]
+            hist = hists[sym]
             target = deltas.get(sym, cfg.delta)
-            r, w, ref_iv, rv = [], [], None, None
+            ref_iv = rv = None
             if do_puts:
                 r, w, ref_iv, rv = screen_symbol(api, sym, spot, cfg, today, earnings, hist, target, owns.get(sym))
                 if not r:
-                    errors.append(f"{sym}: no put at |delta| <= {target} in {cfg.dte_min}-{cfg.dte_max} DTE")
+                    err.append(f"{sym}: no put at |delta| <= {target} in {cfg.dte_min}-{cfg.dte_max} DTE")
                 if sym in owns and not w:
-                    errors.append(f"{sym}: no put with a bid at or below ${owns[sym]:g} in {cfg.dte_min}-{cfg.dte_max} DTE (wheel view)")
-                rows += r
-                wheel_rows += w
+                    err.append(f"{sym}: no put with a bid at or below ${owns[sym]:g} in {cfg.dte_min}-{cfg.dte_max} DTE (wheel view)")
+                refv = (ref_iv, rv, spot)
             if do_cc and sym in costs:
                 c = screen_cc(api, sym, spot, cfg, today, earnings, hist, costs[sym])
                 if not c:
-                    errors.append(f"{sym}: no call with a bid at or above your ${costs[sym]:g} cost basis within "
-                                  f"{cfg.cc_delta:g}Δ in {cfg.cc_dte_min}-{cfg.cc_dte_max} DTE (covered calls)")
-                cc_rows += c
-            if do_puts:
-                ref[sym] = (ref_iv, rv, spot)
+                    err.append(f"{sym}: no call with a bid at or above your ${costs[sym]:g} cost basis within "
+                               f"{cfg.cc_delta:g}Δ in {cfg.cc_dte_min}-{cfg.cc_dte_max} DTE (covered calls)")
             print(f"{sym:6} {len(r)} expiries" if do_puts else f"{sym:6} covered calls done", file=sys.stderr)
         except Exception as ex:  # one bad ticker shouldn't kill the run
-            errors.append(f"{sym}: {ex}")
+            err.append(f"{sym}: {ex}")
             print(f"{sym:6} ERROR {ex}", file=sys.stderr)
+            r, w, c, refv = [], [], [], None
+        return sym, err, r, w, c, refv
+
+    t0 = time.time()
+    with ThreadPoolExecutor(max_workers=max(1, cfg.workers)) as ex_:
+        results = list(ex_.map(work, symbols))   # map keeps watchlist order
+    for sym, err, r, w, c, refv in results:
+        errors += err
+        rows += r
+        wheel_rows += w
+        cc_rows += c
+        if refv:
+            ref[sym] = refv
+    elapsed = time.time() - t0
 
     if recorded:
         for sym, (iv, rv, spot) in ref.items():
@@ -919,7 +937,7 @@ def main():
     payload = {
         "generated": now.strftime("%Y-%m-%d %H:%M ET"), "generated_at": now.isoformat(), "mock": cfg.mock, "recorded": recorded,
         "session": session.isoformat(), "phase": phase,
-        "earnings_source": bool(fh_key), "only": cfg.only, "leg_times": leg_times,
+        "earnings_source": bool(fh_key), "only": cfg.only, "elapsed_s": round(elapsed, 1), "workers": cfg.workers, "leg_times": leg_times,
         "config": {"delta": cfg.delta, "dte_min": cfg.dte_min, "dte_max": cfg.dte_max, "min_oi": cfg.min_oi,
                    "max_spread": cfg.max_spread, "ivr_min": cfg.ivr_min, "ivrv_min": cfg.ivrv_min,
                    "min_history": cfg.min_history, "min_roc": cfg.min_roc, "custom_delta": deltas,
@@ -947,7 +965,7 @@ def main():
         for r in sorted(rows, key=lambda r: -r["roc"]):
             w.writerow([("" if r.get(c) is None else (round(r[c], 4) if isinstance(r[c], float) else r[c]))
                         for c in CSV_COLS])
-    print(f"{len(rows)} rows, {sum(r['passes'] for r in rows)} passing -> {out / 'index.html'}", file=sys.stderr)
+    print(f"{elapsed:.1f}s ({cfg.workers} workers); {len(rows)} rows, {sum(r['passes'] for r in rows)} passing -> {out / 'index.html'}", file=sys.stderr)
 
 
 if __name__ == "__main__":
