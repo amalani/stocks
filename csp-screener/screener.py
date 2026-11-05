@@ -441,6 +441,7 @@ def _call_row(o, spot, dte, em, cost):
         called_pct=round((K + mid - cost) / cost * 100, 2),         # return vs your cost basis if called away
         em_mult=round((K - spot) / em, 3) if em else None,
         spread_pct=round((ask - bid) / mid * 100, 2) if ask and mid > 0 else None,
+        spread=round(ask - bid, 3) if ask else None,
         oi=int(o.get("open_interest") or 0), volume=int(o.get("volume") or 0),
         iv=norm_iv((o.get("greeks") or {}).get("mid_iv")))
 
@@ -495,7 +496,10 @@ def screen_cc(api, sym, spot, cfg, today, earnings, hist_iv, cost):
     for r in rows:   # IV richness is information only: you hold the shares either way
         r["ref_iv"], r["ivr"], r["ivr_n"], r["rv30"] = ref_iv, ivr, n, rv
         r["iv_rv"] = (ref_iv / rv) if (ref_iv and rv) else None
-        r["liquid"] = (r["spread_pct"] is not None and r["spread_pct"] <= cfg.max_spread and r["oi"] >= cfg.min_oi)
+        # Far-OTM calls are cheap, so a normal 5-10c spread is a big % of mid: also accept a small absolute spread.
+        tight = r["spread_pct"] is not None and (r["spread_pct"] <= cfg.max_spread or
+                                                 (r["spread"] is not None and r["spread"] <= cfg.cc_max_spread_abs))
+        r["liquid"] = bool(tight and r["oi"] >= cfg.min_oi)
         r["pays"] = r["roc"] >= cfg.min_cc_yield
         r["passes"] = bool(r["liquid"] and r["pays"] and not r["earnings"])
     return rows
@@ -756,6 +760,9 @@ def main():
                     help="max |delta| of the covered call, roughly the chance of being called away (0.20)")
     ap.add_argument("--cc-dte-min", type=int, default=5, help="skip covered-call expiries sooner than this (no dailies)")
     ap.add_argument("--cc-dte-max", type=int, default=38, help="covered-call window: Friday/monthly expiries up to this many days out")
+    ap.add_argument("--cc-max-spread-abs", type=float, default=0.10,
+                    help="covered calls also count as liquid when the bid-ask gap is at most this many dollars (0.10), "
+                         "since cheap far-OTM calls have huge %% spreads")
     ap.add_argument("--min-cc-yield", type=float, default=10.0,
                     help="annualized premium yield (%% of share price) a call must pay to count as worth a look (default 10)")
     ap.add_argument("--min-history", type=int, default=20, help="days of IV history before IV Rank is shown")
@@ -878,7 +885,8 @@ def main():
                    "max_spread": cfg.max_spread, "ivr_min": cfg.ivr_min, "ivrv_min": cfg.ivrv_min,
                    "min_history": cfg.min_history, "min_roc": cfg.min_roc, "custom_delta": deltas,
                    "own_price": owns, "cost_basis": costs, "cc_delta": cfg.cc_delta,
-                   "cc_dte_min": cfg.cc_dte_min, "cc_dte_max": cfg.cc_dte_max, "min_cc_yield": cfg.min_cc_yield},
+                   "cc_dte_min": cfg.cc_dte_min, "cc_dte_max": cfg.cc_dte_max, "min_cc_yield": cfg.min_cc_yield,
+                   "cc_max_spread_abs": cfg.cc_max_spread_abs},
         "watchlist": {"source": wl_source, "notes": wl_notes},
         "rows": rows, "wheel": wheel_rows, "cc": cc_rows, "history": history, "errors": errors,
     }

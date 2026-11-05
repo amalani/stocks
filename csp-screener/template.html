@@ -290,6 +290,8 @@ const wheelCols = [
   {...col('ivr'), chk: undefined},   // information only here, not part of the ●
   col('spread_pct'), col('oi'), col('earnings'), col('spark'),
 ];
+// Covered calls: spread is fine if small as a % of mid, or small in dollars (cheap far-OTM calls have big % spreads).
+const ccTight = x => x.spread_pct != null && (x.spread_pct <= C.max_spread || (x.spread != null && C.cc_max_spread_abs != null && x.spread <= C.cc_max_spread_abs));
 const money = v => '$' + num(v, v % 1 ? 2 : 0);
 const ccCols = [
   {k:'passes', label:'●', tip:'Worth a look for a covered call: liquid, pays at least the yield hurdle, no earnings before expiry. The strike is never below your cost basis. Hover a row\'s ● for its reason.',
@@ -310,7 +312,10 @@ const ccCols = [
   {...col('em_mult'), tip:'Room to the strike in units of the 1σ expected move (ATM IV). 1× or more means the strike is outside the typical move.',
     cls:r => r.em_mult == null ? '' : r.em_mult >= 1 ? 'good' : '', html:r => r.em_mult == null ? '–' : num(r.em_mult) + '×'},
   {...col('ivr'), chk: undefined},   // information only here: you hold the shares either way
-  col('spread_pct'), col('oi'), col('earnings'), col('spark'),
+  {...col('spread_pct'), tip:'bid-ask as % of mid; also fine if the gap is at most $' + (C.cc_max_spread_abs != null ? C.cc_max_spread_abs.toFixed(2) : '0.10'),
+    chk:r => ccTight(r) ? 'ok' : 'no', cls:r => ccTight(r) ? '' : 'bad',
+    html:r => pct(r.spread_pct, 1) + (r.spread != null ? ` <span class="mute">$${num(r.spread)}</span>` : '')},
+  col('oi'), col('earnings'), col('spark'),
 ];
 let cols = incomeCols;
 const tgt = r => r.target_delta != null ? r.target_delta : C.delta;     // older saved runs have no target_delta
@@ -456,8 +461,7 @@ function reason(r) {
 // Covered call: you hold the shares, so the question is whether the premium is worth the capped upside.
 function ccReason(r) {
   if (r.earnings) return `Skip: earnings ${r.earnings} before expiry`;
-  const liq = r.spread_pct != null && r.spread_pct <= C.max_spread && r.oi >= C.min_oi;
-  if (!liq) return `Skip: thin market (spread ${pct(r.spread_pct)}, OI ${r.oi.toLocaleString()})`;
+  if (!(ccTight(r) && r.oi >= C.min_oi)) return `Skip: thin market (spread ${pct(r.spread_pct)}${r.spread != null ? ' / $' + num(r.spread) : ''}, OI ${r.oi.toLocaleString()})`;
   if (r.pays === false) return `Thin: ${pct(r.roc, 0)} annualized is under your ${C.min_cc_yield}% hurdle` +
     (r.floored ? `; your cost basis pushes the strike up to $${num(r.strike, r.strike % 1 ? 2 : 0)}, which is why it pays so little` : '');
   return `Worth a look: collect $${r.premium.toFixed(0)} (${pct(r.roc, 0)} annualized), about ${(r.delta * 100).toFixed(0)}% chance of being called away at $${num(r.strike, r.strike % 1 ? 2 : 0)}, ` +
@@ -476,11 +480,12 @@ function wheelReason(r) {
 
 // The tests behind ●, with the actual numbers.
 function checklist(r) {
-  const liq = r.spread_pct != null && r.spread_pct <= C.max_spread && r.oi >= C.min_oi;
+  const cc = r.cost_basis != null;
+  const liq = (cc ? ccTight(r) : r.spread_pct != null && r.spread_pct <= C.max_spread) && r.oi >= C.min_oi;
   const wheel = r.own_price != null || r.cost_basis != null;   // IV richness is information only on these tabs
   const items = [
     {s: liq ? 'ok' : 'no', t: 'Liquid',
-     d: `spread ${pct(r.spread_pct)} (max ${C.max_spread}%) · open interest ${r.oi.toLocaleString()} (min ${C.min_oi})`},
+     d: `spread ${pct(r.spread_pct)}${cc && r.spread != null ? ' / $' + num(r.spread) : ''} (max ${C.max_spread}%${cc && C.cc_max_spread_abs != null ? ' or $' + C.cc_max_spread_abs.toFixed(2) : ''}) · open interest ${r.oi.toLocaleString()} (min ${C.min_oi})`},
     ...(wheel ? [] : [{s: r.rich ? 'ok' : 'no', t: 'IV elevated',
      d: r.ivr != null ? `IV Rank ${num(r.ivr, 0)} (needs ≥ ${C.ivr_min}), over ${r.ivr_n} days of history`
         : `IV/RV ${num(r.iv_rv)} (needs ≥ ${C.ivrv_min}). IV Rank starts after ${C.min_history} days of history (${r.ivr_n} so far)`}]),
@@ -510,7 +515,7 @@ function ccLadderHTML(r) {
       <td>${num(x.delta)}</td><td>${num(x.mid)}</td><td>${pct(x.roc)}</td><td>${pct(x.upside_pct)}</td>
       <td class="${loss ? 'bad' : ''}">${pct(x.called_pct)}</td>
       <td>${x.em_mult == null ? '–' : num(x.em_mult) + '×'}</td>
-      <td class="${x.spread_pct == null || x.spread_pct > C.max_spread ? 'bad' : ''}">${pct(x.spread_pct)}</td>
+      <td class="${ccTight(x) ? '' : 'bad'}">${pct(x.spread_pct)}</td>
       <td class="${x.oi < C.min_oi ? 'bad' : ''}">${x.oi.toLocaleString()}</td>
       <td>${x.iv == null ? '–' : pct(x.iv * 100, 0)}</td></tr>`;
   }).join('');
@@ -658,7 +663,7 @@ function setLegend() {
   const hurdle = C.min_roc != null ? C.min_roc + '%' : 'your hurdle';
   const ccHurdle = C.min_cc_yield != null ? C.min_cc_yield + '%' : 'your hurdle';
   $('#legend').innerHTML = (lens === 'cc'
-    ? `<b>●</b> = worth a look for a covered call: liquid, pays at least ${ccHurdle} annualized on the share price, no earnings before expiry. IV richness is not required, since you hold the shares anyway. Strikes are at most ${C.cc_delta != null ? C.cc_delta.toFixed(2) : ''}Δ (<b>Called Δ</b> is roughly the chance of being called away) and <b>never below your cost basis</b>; a <b>floor</b> tag means the cost basis pushed the strike up. <b>If called</b> is your gain on the shares, premium included.`
+    ? `<b>●</b> = worth a look for a covered call: liquid (spread ≤ ${C.max_spread}% of mid or ≤ $${C.cc_max_spread_abs != null ? C.cc_max_spread_abs.toFixed(2) : '0.10'}), pays at least ${ccHurdle} annualized on the share price, no earnings before expiry. IV richness is not required, since you hold the shares anyway. Strikes are at most ${C.cc_delta != null ? C.cc_delta.toFixed(2) : ''}Δ (<b>Called Δ</b> is roughly the chance of being called away) and <b>never below your cost basis</b>; a <b>floor</b> tag means the cost basis pushed the strike up. <b>If called</b> is your gain on the shares, premium included.`
     : lens === 'wheel'
     ? `<b>●</b> = worth a look for the wheel: liquid, pays at least ${hurdle} annualized, no earnings before expiry. IV richness is not required, since you are happy to own the stock at your price. <b>Net cost</b> is strike minus premium; <b>Assign Δ</b> is roughly the chance of being assigned. <b>Spot vs own</b> turns red when the stock is at or below your own price: the strike then follows spot, so update the price.`
     : `<b>●</b> = worth a look: liquid, IV elevated, pays at least ${hurdle} annualized, no earnings before expiry.`) +
