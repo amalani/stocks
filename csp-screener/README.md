@@ -79,7 +79,7 @@ CRON_TZ=America/New_York
 
 Serve `public/` from your home server (nginx/Caddy static dir, or `python3 -m http.server 8080 -d public`).
 On-demand refresh = run `python3 screener.py` again, or `--only puts` / `--only cc` to refresh one part (the other is
-carried over from the same session's last run; tickers are screened 4 at a time (`--workers N`; lower it if Tradier returns 429s) and the page header shows how long the run took; the page notes when the parts have different timestamps). Re-runs on the same day overwrite that day's history row.
+carried over from the same session's last run; tickers are screened 4 at a time (`--workers N`; a shared limiter keeps calls under Tradier's 120/min quota, so run time is bounded by calls, roughly ~10 per ticker) and the page header shows how long the run took; the page notes when the parts have different timestamps). Re-runs on the same day overwrite that day's history row.
 
 ## Docker on a NAS + Cloudflare tunnel
 

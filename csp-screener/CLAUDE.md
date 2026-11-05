@@ -25,7 +25,7 @@ Owner's trading rules the screener encodes (change via CLI flags, not by editing
 - `--only puts|cc`: partial run. Skips the other leg, carries its rows/errors over from the same session's latest.json (or runs snapshot;
   none = empty), records `payload.only` + `leg_times` (page banner when they differ). `cc` fetches only tickers with a cost basis. IV history/picks
   are only written by puts runs. `deploy.sh --run-puts|--run-cc` wrap it for the NAS.
-- Tickers are screened in parallel (`work()` in `main`, `ThreadPoolExecutor`, `--workers`, default 4); sqlite reads happen before and writes after, on the main thread. Run time is `payload.elapsed_s`, shown in the page header.
+- Tickers are screened in parallel (`work()` in `main`, `ThreadPoolExecutor`, `--workers`, default 4; `Tradier._throttle` caps all threads at 100 calls/min, the quota is 120/min and a violation is HTTP 400 "Quota Violation", not 429); sqlite reads happen before and writes after, on the main thread. Run time is `payload.elapsed_s`, shown in the page header.
 - `pwa/`: installable-app files (manifest, `sw.js`, icons), copied into the output dir by `write_pwa()` on every run and
   `--rerender`. The service worker is network-first (fresh data, cached fallback offline) and registers only over https.
 - Generated and gitignored: `public/` (index.html, latest.json, latest.csv, manifest.js, runs/ snapshots), `public-mock/` (same, for `--mock`),

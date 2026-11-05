@@ -26,6 +26,7 @@ import random
 import re
 import sqlite3
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -53,24 +54,52 @@ class Tradier:
     def __init__(self, token, base):
         self.token, self.base = token, base.rstrip("/")
 
+    # Tradier allows 120 market-data calls per minute per token. Over the limit it answers HTTP 400 (not 429) with a
+    # plain-text "Quota Violation: Expires <epoch-ms>" body, so that is detected explicitly. A shared sliding-window
+    # limiter keeps all threads under RATE_PER_MIN, so parallel workers hide latency but cannot exceed the quota.
+    RATE_PER_MIN = 100
+    _lock = threading.Lock()
+    _stamps = []
+
+    def _throttle(self):
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                self._stamps[:] = [t for t in self._stamps if now - t < 60]
+                if len(self._stamps) < self.RATE_PER_MIN:
+                    self._stamps.append(now)
+                    return
+                wait = 60 - (now - self._stamps[0]) + 0.05
+            time.sleep(wait)
+
     def _get(self, path, **params):
         url = f"{self.base}{path}?{urllib.parse.urlencode(params)}"
         req = urllib.request.Request(
             url, headers={"Authorization": f"Bearer {self.token}", "Accept": "application/json"}
         )
-        for attempt in range(4):
+        for attempt in range(5):
+            self._throttle()
             try:
                 with urllib.request.urlopen(req, timeout=30) as r:
-                    data = json.load(r)
-                time.sleep(0.15)  # stay well under rate limits
-                return data
+                    return json.load(r)
             except urllib.error.HTTPError as e:
-                if e.code in (429, 500, 502, 503, 504) and attempt < 3:
+                body = ""
+                try:
+                    body = e.read().decode("utf-8", "replace")
+                except Exception:
+                    pass
+                if "Quota Violation" in body and attempt < 4:
+                    m = re.search(r"Expires\s+(\d{10,})", body)
+                    wait = min(max((int(m.group(1)) / 1000 - time.time()) if m else 30, 1), 65) + 0.5
+                    print(f"  rate limit hit, waiting {wait:.0f}s", file=sys.stderr)
+                    time.sleep(wait)
+                    continue
+                if e.code in (429, 500, 502, 503, 504) and attempt < 4:
                     time.sleep(2 ** attempt)
                     continue
                 raise
             except urllib.error.URLError:
-                if attempt < 3:
+                if attempt < 4:
                     time.sleep(2 ** attempt)
                     continue
                 raise
@@ -771,8 +800,8 @@ def main():
                          "(only tickers with a cost basis are fetched). The other part is carried over from the "
                          "session's last saved run, so the page stays complete. Default: everything")
     ap.add_argument("--workers", type=int, default=4,
-                    help="tickers screened in parallel (default 4; Tradier allows ~120 market-data calls/min, "
-                         "so lower this if you see 429 retries)")
+                    help="tickers screened in parallel (default 4). Hides latency only: all threads share a limiter "
+                         "capped at 100 Tradier calls/min (the quota is 120/min per token)")
     ap.add_argument("--min-history", type=int, default=20, help="days of IV history before IV Rank is shown")
     ap.add_argument("--out", default=None, help="output dir (default public/, or public-mock/ with --mock)")
     ap.add_argument("--db", default=None)
