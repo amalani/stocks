@@ -765,6 +765,10 @@ def main():
                          "since cheap far-OTM calls have huge %% spreads")
     ap.add_argument("--min-cc-yield", type=float, default=10.0,
                     help="annualized premium yield (%% of share price) a call must pay to count as worth a look (default 10)")
+    ap.add_argument("--only", choices=["puts", "cc"], default=None,
+                    help="refresh just one part of the page: 'puts' = Income + Wheel tabs, 'cc' = Covered calls tab "
+                         "(only tickers with a cost basis are fetched). The other part is carried over from the "
+                         "session's last saved run, so the page stays complete. Default: everything")
     ap.add_argument("--min-history", type=int, default=20, help="days of IV history before IV Rank is shown")
     ap.add_argument("--out", default=None, help="output dir (default public/, or public-mock/ with --mock)")
     ap.add_argument("--db", default=None)
@@ -815,6 +819,11 @@ def main():
         if not token:
             sys.exit("No Tradier token: set TRADIER_TOKEN in csp-screener/.env (see .env.example)")
         api = Tradier(token, os.environ.get("TRADIER_BASE_URL", "https://api.tradier.com/v1"))
+    do_puts, do_cc = cfg.only != "cc", cfg.only != "puts"
+    if not do_puts:   # covered-call-only run: nothing to fetch for tickers without shares
+        symbols = [s_ for s_ in symbols if s_ in costs]
+        if not symbols:
+            sys.exit("--only cc: no ticker in the watchlist has a cost basis")
     quotes = api.quotes(symbols)
     api = Memo(api)
 
@@ -825,6 +834,33 @@ def main():
     # must not replace the 4:30pm run. Otherwise it only refreshes index.html / latest.*.
     recorded = PHASE_RANK[phase] >= saved_rank(out, session)
     rows, wheel_rows, cc_rows, errors, ref = [], [], [], [], {}
+    # A partial run keeps the other part from this session's last payload (never from an older day).
+    prev, leg_times = None, {}
+    if cfg.only:
+        for f in (out / "latest.json", out / "runs" / f"{session}.json"):
+            try:
+                cand = json.loads(f.read_text())
+            except (OSError, ValueError):
+                continue
+            if cand.get("session") == session.isoformat():
+                prev = cand
+                break
+        if prev is None:
+            print(f"--only {cfg.only}: no earlier run for session {session}; the other tabs will be empty "
+                  f"until a full run", file=sys.stderr)
+        else:
+            leg_times = dict(prev.get("leg_times") or {})
+            for k in ("puts", "cc"):
+                leg_times.setdefault(k, prev.get("generated_at"))
+            if do_puts:
+                cc_rows = list(prev.get("cc") or [])
+                errors += [e for e in prev.get("errors", []) if "(covered calls)" in e]
+            else:
+                rows, wheel_rows = list(prev.get("rows") or []), list(prev.get("wheel") or [])
+                errors += [e for e in prev.get("errors", []) if "(covered calls)" not in e]
+    for k, on in (("puts", do_puts), ("cc", do_cc)):
+        if on:
+            leg_times[k] = now.isoformat()
     for sym in symbols:
         try:
             q = quotes.get(sym)
@@ -838,21 +874,24 @@ def main():
                 "SELECT atm_iv FROM iv_daily WHERE symbol=? AND date<? ORDER BY date DESC LIMIT 252",
                 (sym, session.isoformat()))]
             target = deltas.get(sym, cfg.delta)
-            r, w, ref_iv, rv = screen_symbol(api, sym, spot, cfg, today, earnings, hist, target, owns.get(sym))
-            if not r:
-                errors.append(f"{sym}: no put at |delta| <= {target} in {cfg.dte_min}-{cfg.dte_max} DTE")
-            if sym in owns and not w:
-                errors.append(f"{sym}: no put with a bid at or below ${owns[sym]:g} in {cfg.dte_min}-{cfg.dte_max} DTE (wheel view)")
-            rows += r
-            wheel_rows += w
-            if sym in costs:
+            r, w, ref_iv, rv = [], [], None, None
+            if do_puts:
+                r, w, ref_iv, rv = screen_symbol(api, sym, spot, cfg, today, earnings, hist, target, owns.get(sym))
+                if not r:
+                    errors.append(f"{sym}: no put at |delta| <= {target} in {cfg.dte_min}-{cfg.dte_max} DTE")
+                if sym in owns and not w:
+                    errors.append(f"{sym}: no put with a bid at or below ${owns[sym]:g} in {cfg.dte_min}-{cfg.dte_max} DTE (wheel view)")
+                rows += r
+                wheel_rows += w
+            if do_cc and sym in costs:
                 c = screen_cc(api, sym, spot, cfg, today, earnings, hist, costs[sym])
                 if not c:
                     errors.append(f"{sym}: no call with a bid at or above your ${costs[sym]:g} cost basis within "
                                   f"{cfg.cc_delta:g}Δ in {cfg.cc_dte_min}-{cfg.cc_dte_max} DTE (covered calls)")
                 cc_rows += c
-            ref[sym] = (ref_iv, rv, spot)
-            print(f"{sym:6} {len(r)} expiries", file=sys.stderr)
+            if do_puts:
+                ref[sym] = (ref_iv, rv, spot)
+            print(f"{sym:6} {len(r)} expiries" if do_puts else f"{sym:6} covered calls done", file=sys.stderr)
         except Exception as ex:  # one bad ticker shouldn't kill the run
             errors.append(f"{sym}: {ex}")
             print(f"{sym:6} ERROR {ex}", file=sys.stderr)
@@ -880,7 +919,7 @@ def main():
     payload = {
         "generated": now.strftime("%Y-%m-%d %H:%M ET"), "generated_at": now.isoformat(), "mock": cfg.mock, "recorded": recorded,
         "session": session.isoformat(), "phase": phase,
-        "earnings_source": bool(fh_key),
+        "earnings_source": bool(fh_key), "only": cfg.only, "leg_times": leg_times,
         "config": {"delta": cfg.delta, "dte_min": cfg.dte_min, "dte_max": cfg.dte_max, "min_oi": cfg.min_oi,
                    "max_spread": cfg.max_spread, "ivr_min": cfg.ivr_min, "ivrv_min": cfg.ivrv_min,
                    "min_history": cfg.min_history, "min_roc": cfg.min_roc, "custom_delta": deltas,

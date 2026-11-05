@@ -743,6 +743,10 @@ function init() {
   (D.cc || []).forEach(r => { held[r.symbol] = r; });
   Object.values(held).filter(r => r.spot_vs_cost < 0).sort((a, b) => a.spot_vs_cost - b.spot_vs_cost).forEach(r =>
     b.push(`${r.symbol} was $${num(r.spot)} at the last run, ${pct(-r.spot_vs_cost)} under your $${num(r.cost_basis, r.cost_basis % 1 ? 2 : 0)} cost basis. Covered calls stay at or above your cost, so their strikes sit further out and pay less.`));
+  if (D.only && D.leg_times && D.leg_times.puts && D.leg_times.cc) {
+    const fmt = x => new Date(x).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'});
+    b.push(`Partial refresh: Income and Wheel as of ${fmt(D.leg_times.puts)}, Covered calls as of ${fmt(D.leg_times.cc)}.`);
+  }
   ((D.watchlist && D.watchlist.notes) || []).forEach(n => b.push(n));
   if (D.mock) b.push('Mock data: synthetic numbers for testing the page, not market data.');
   const sess = D.session || D.generated.slice(0, 10);

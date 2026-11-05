@@ -78,7 +78,8 @@ CRON_TZ=America/New_York
 ```
 
 Serve `public/` from your home server (nginx/Caddy static dir, or `python3 -m http.server 8080 -d public`).
-On-demand refresh = run `python3 screener.py` again. Re-runs on the same day overwrite that day's history row.
+On-demand refresh = run `python3 screener.py` again, or `--only puts` / `--only cc` to refresh one part (the other is
+carried over from the same session's last run; the page notes when the parts have different timestamps). Re-runs on the same day overwrite that day's history row.
 
 ## Docker on a NAS + Cloudflare tunnel
 
@@ -108,6 +109,8 @@ NAS serves. Run `deploy.sh` on the NAS (it does `git pull --ff-only`, `docker co
 ```
 ./deploy.sh              # code change only; the next scheduled run uses the new screener.py
 ./deploy.sh --run        # also run the screener now (fresh Tradier data + page)
+./deploy.sh --run-puts   # refresh only Income + Wheel (covered calls kept from the last run)
+./deploy.sh --run-cc     # refresh only Covered calls (fast; only tickers with a cost basis are fetched)
 ./deploy.sh --rerender   # template.html-only change: rebuild every saved page from stored data (no API calls)
 ```
 

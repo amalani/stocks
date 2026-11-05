@@ -22,6 +22,9 @@ Owner's trading rules the screener encodes (change via CLI flags, not by editing
   basis (`floored` + `target_strike` when the cost lifted it). Rows reuse the key `roc` for annualized yield on *spot* (not strike) so
   filters/sort work; `ccCols`, `ccReason`, `ccLadderHTML`, `ccTakeHTML` in the template. `Memo` caches chains so puts and calls share API calls.
   Spot < cost means strikes get floored far OTM and pay little by design; the ladder shows the cost of selling lower (loss if called).
+- `--only puts|cc`: partial run. Skips the other leg, carries its rows/errors over from the same session's latest.json (or runs snapshot;
+  none = empty), records `payload.only` + `leg_times` (page banner when they differ). `cc` fetches only tickers with a cost basis. IV history/picks
+  are only written by puts runs. `deploy.sh --run-puts|--run-cc` wrap it for the NAS.
 - `pwa/`: installable-app files (manifest, `sw.js`, icons), copied into the output dir by `write_pwa()` on every run and
   `--rerender`. The service worker is network-first (fresh data, cached fallback offline) and registers only over https.
 - Generated and gitignored: `public/` (index.html, latest.json, latest.csv, manifest.js, runs/ snapshots), `public-mock/` (same, for `--mock`),
