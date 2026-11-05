@@ -3,6 +3,8 @@
 #   AMD 0.30      <- names you are happy to be assigned on
 # Optional own price (price you would be happy to own it at) after @, for the Wheel tab:
 #   AMD 0.30 @480    MU @200
+# Optional cost basis of shares you hold, after $, for the Covered calls tab:
+#   AMD $465
 # Or keep these in a Google Sheet and set WATCHLIST_URL in .env (see README); the sheet wins when reachable.
 AMZN
 COST

@@ -13,6 +13,7 @@ Stdlib-only Python 3.9+. Uses the same Tradier endpoints as `options-tracker-she
 2. Edit `watchlist.txt` (10–20 tickers). Optionally give a ticker its own max put delta, e.g. `AMD 0.30` for a name
    you are happy to be assigned on (default 0.20). Clicking a row on the page shows the neighbouring strikes at that expiry.
    Add `@price` for the price you would be happy to own it at (`AMD 0.30 @480`); those tickers get the **Wheel** tab.
+   Add `$price` for the cost basis of shares you hold (`AMD $465`); those tickers get the **Covered calls** tab.
 3. Optional: keep the watchlist in a Google Sheet instead. Make a tab "Screener Watchlist" with columns
    `Ticker | Max delta | Own price` (blanks use defaults; only tickers and prices in that tab). Import
    `screener-watchlist-import.csv` (File, Import, Upload, "Insert new sheet") to start from the current list, then File, Share,
@@ -135,6 +136,9 @@ Dockerfile if the extra seconds bother you. Saved per-run pages in `public/runs/
   (nearest 14 DTE, so very short expiries don't win on inflated annualized ROC).
   Thresholds are CLI flags.
 
+- **Covered calls tab**: for tickers with a cost basis, the call at the highest delta ≤ `--cc-delta` (0.20) at each Friday/monthly
+  expiry `--cc-dte-min`..`--cc-dte-max` (5-38 days), never at a strike below the cost basis (flagged `floor` when the cost lifted it).
+  ● needs liquidity, ≥ `--min-cc-yield` (10%) annualized on the share price and no earnings; IV richness is information only.
 - **Wheel tab**: for tickers with an own price, the highest put strike at or below min(own price, spot) at each expiry.
   **Net cost** = strike minus premium (your per-share cost if assigned); **Assign Δ** is roughly the assignment chance.
   ● needs liquidity, the ROC hurdle and no earnings; IV richness is informational only.

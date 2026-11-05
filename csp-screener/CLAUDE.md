@@ -17,6 +17,11 @@ Owner's trading rules the screener encodes (change via CLI flags, not by editing
 - `template.html`: the page. `screener.py` replaces the literal `/*__DATA__*/null` with the JSON payload and writes
   `public/index.html`. Vanilla JS, no CDN, so it works offline on a locked-down server.
 - `watchlist.txt`: tickers, `#` comments. Optional per-ticker max put delta after the ticker (`AMD 0.30`); default is `--delta`.
+- Covered calls (`cc_leg` / `screen_cc`, payload `cc`, tab 3 in the page): watchlist `$465` / sheet "Cost basis" column = shares held.
+  Expiries = one per week (Friday, Thursday if holiday) in `--cc-dte-min..max`; pick = highest call delta ≤ `--cc-delta` with strike ≥ cost
+  basis (`floored` + `target_strike` when the cost lifted it). Rows reuse the key `roc` for annualized yield on *spot* (not strike) so
+  filters/sort work; `ccCols`, `ccReason`, `ccLadderHTML`, `ccTakeHTML` in the template. `Memo` caches chains so puts and calls share API calls.
+  Spot < cost means strikes get floored far OTM and pay little by design; the ladder shows the cost of selling lower (loss if called).
 - `pwa/`: installable-app files (manifest, `sw.js`, icons), copied into the output dir by `write_pwa()` on every run and
   `--rerender`. The service worker is network-first (fresh data, cached fallback offline) and registers only over https.
 - Generated and gitignored: `public/` (index.html, latest.json, latest.csv, manifest.js, runs/ snapshots), `public-mock/` (same, for `--mock`),

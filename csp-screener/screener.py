@@ -274,16 +274,19 @@ def parse_num(s):
     return float(s[:-1]) / 100 if s.endswith("%") else float(s)
 
 
-def _check(sym, delta, own):
+def _check(sym, delta, own, cost=None):
     if delta is not None and not (0 < delta < 1):
         raise ValueError(f"{sym}: max delta must be between 0 and 1 (got {delta})")
     if own is not None and own <= 0:
         raise ValueError(f"{sym}: own price must be positive (got {own})")
+    if cost is not None and cost <= 0:
+        raise ValueError(f"{sym}: cost basis must be positive (got {cost})")
 
 
 def parse_watchlist_lines(lines):
-    """Text format, one ticker per line: AMD | AMD 0.30 | AMD @480 | AMD 0.30 @480   ('#' = comment).
-    0.30 is the max put delta for that ticker; @480 is the price you would be happy to own it at."""
+    """Text format, one ticker per line: AMD | AMD 0.30 | AMD @480 | AMD 0.30 @480 $465   ('#' = comment).
+    0.30 is the max put delta for that ticker; @480 is the price you would be happy to own it at;
+    $465 is the cost basis of shares you already hold (turns on the covered-call view)."""
     wl = {}
     for line in lines:
         parts = line.split("#")[0].upper().split()
@@ -294,24 +297,26 @@ def parse_watchlist_lines(lines):
             raise ValueError(f"bad ticker {parts[0]!r}")
         if sym in wl:
             continue
-        delta = own = None
+        delta = own = cost = None
         for p in parts[1:]:
             try:
                 if p.startswith("@"):
                     own = parse_num(p[1:])
+                elif p.startswith("$"):
+                    cost = parse_num(p[1:])
                 else:
                     delta = parse_num(p)
             except ValueError:
-                raise ValueError(f"{sym}: can't read {p!r} (use e.g. 'AMD 0.30 @480')")
-        _check(sym, delta, own)
-        wl[sym] = {"delta": delta, "own": own}
+                raise ValueError(f"{sym}: can't read {p!r} (use e.g. 'AMD 0.30 @480 $465')")
+        _check(sym, delta, own, cost)
+        wl[sym] = {"delta": delta, "own": own, "cost": cost}
     return wl
 
 
 def parse_watchlist_csv(text):
     """Published Google Sheet CSV. Header row names the columns: Ticker, Max delta, Own price
-    (matched loosely: 'ticker'/'symbol', 'delta', 'own'/'buy'/'hold'/'price'). Without a header the order is
-    ticker, delta, own price. Bad rows are skipped with a note rather than failing the run."""
+    (matched loosely: 'ticker'/'symbol', 'delta', 'own'/'buy'/'hold'/'price', 'cost'/'basis'). Without a header the
+    order is ticker, delta, own price, cost basis. Bad rows are skipped with a note rather than failing the run."""
     rows = [r for r in csv.reader(io.StringIO(text)) if any(c.strip() for c in r)]
     if not rows:
         raise ValueError("sheet is empty")
@@ -324,9 +329,11 @@ def parse_watchlist_csv(text):
     if i_t is None:
         if not TICKER_RE.match(rows[0][0].strip().upper()):
             raise ValueError("no Ticker column found in the sheet")
-        i_t, i_d, i_o, body = 0, 1, 2, rows
+        i_t, i_d, i_o, i_c, body = 0, 1, 2, 3, rows
     else:
-        i_d, i_o, body = col("delta"), col("own", "buy", "hold", "price"), rows[1:]
+        i_c = col("cost", "basis")
+        i_o = next((i for i, h in enumerate(head) if i != i_c and any(n in h for n in ("own", "buy", "hold", "price"))), None)
+        i_d, body = col("delta"), rows[1:]
     wl, notes = {}, []
     for r in body:
         cell = lambda i: r[i].strip() if i is not None and i < len(r) else ""
@@ -337,12 +344,12 @@ def parse_watchlist_csv(text):
             notes.append(f"sheet: skipped {sym!r} (not a ticker)")
             continue
         try:
-            delta, own = parse_num(cell(i_d)), parse_num(cell(i_o))
-            _check(sym, delta, own)
+            delta, own, cost = parse_num(cell(i_d)), parse_num(cell(i_o)), parse_num(cell(i_c))
+            _check(sym, delta, own, cost)
         except ValueError as ex:
             notes.append(f"sheet: {ex}; using defaults for {sym}")
-            delta = own = None
-        wl[sym] = {"delta": delta, "own": own}
+            delta = own = cost = None
+        wl[sym] = {"delta": delta, "own": own, "cost": cost}
     return wl, notes
 
 
@@ -384,6 +391,114 @@ def wheel_leg(chain, spot, dte, a_iv, own):
         roc=mid / K * 365 / dte * 100, cushion_pct=(spot - K) / spot * 100,
         em_mult=(spot - K) / em if em else None, premium=mid * 100, collateral=K * 100,
         net_cost=K - mid, net_below_spot_pct=(spot - (K - mid)) / spot * 100)
+
+
+class Memo:
+    """Caches expirations / chains / closes so the put and call screens share API calls."""
+    def __init__(self, api):
+        self.api, self._c = api, {}
+
+    def __getattr__(self, name):
+        fn = getattr(self.api, name)
+        if name not in ("expirations", "chain", "closes"):
+            return fn
+
+        def cached(*a):
+            if (name, a) not in self._c:
+                self._c[(name, a)] = fn(*a)
+            return self._c[(name, a)]
+        return cached
+
+
+# ---- covered calls: shares you hold, sold above spot AND above your cost basis ----------------------------
+def cc_expiries(dates, today, dmin, dmax):
+    """Weekly (Friday) and monthly expiries in the window, no dailies. A week with no Friday expiry (holiday)
+    falls back to its Thursday; Mon/Wed-only weeks are skipped."""
+    last = {}
+    for e in dates:
+        d = date.fromisoformat(e)
+        k = d.isocalendar()[:2]
+        if k not in last or d > last[k]:
+            last[k] = d
+    return [(d.isoformat(), (d - today).days) for d in sorted(last.values())
+            if d.weekday() >= 3 and dmin <= (d - today).days <= dmax]
+
+
+def is_monthly(d):
+    """Third Friday (or the Thursday before it when that Friday is a market holiday)."""
+    return (d.weekday() == 4 and 15 <= d.day <= 21) or (d.weekday() == 3 and 15 <= (d + timedelta(1)).day <= 21)
+
+
+def _call_row(o, spot, dte, em, cost):
+    d = abs(float((o.get("greeks") or {}).get("delta")))
+    bid, ask = float(o["bid"]), float(o.get("ask") or 0)
+    mid = (bid + ask) / 2 if ask else bid
+    K = float(o["strike"])
+    return dict(
+        strike=K, delta=round(d, 4), bid=bid, ask=ask, mid=round(mid, 3), premium=round(mid * 100, 2),
+        roc=round(mid / spot * 365 / dte * 100, 2),                 # annualized premium yield on the share price
+        upside_pct=round((K - spot) / spot * 100, 2),               # room before the shares would be called
+        called_pct=round((K + mid - cost) / cost * 100, 2),         # return vs your cost basis if called away
+        em_mult=round((K - spot) / em, 3) if em else None,
+        spread_pct=round((ask - bid) / mid * 100, 2) if ask and mid > 0 else None,
+        oi=int(o.get("open_interest") or 0), volume=int(o.get("volume") or 0),
+        iv=norm_iv((o.get("greeks") or {}).get("mid_iv")))
+
+
+def cc_leg(chain, spot, dte, a_iv, cost, target):
+    """The call to sell: highest delta still <= target, but never a strike under cost basis. When the cost basis
+    pushes the strike up (spot under cost, or a high-cost name) the row is flagged `floored`."""
+    em = spot * a_iv * math.sqrt(dte / 365) if a_iv else None
+    cands = []
+    for o in chain:
+        if o.get("option_type") != "call" or not o.get("bid"):
+            continue
+        d = (o.get("greeks") or {}).get("delta")
+        if d is None or not (0.02 <= abs(float(d)) <= 0.60) or float(o["strike"]) <= 0:
+            continue
+        cands.append(_call_row(o, spot, dte, em, cost))
+    cands.sort(key=lambda c: c["strike"])
+    within = [c for c in cands if c["delta"] <= target]      # lowest strike here = highest delta <= target
+    if not within:
+        return None
+    ok = [c for c in within if c["strike"] >= cost]
+    if not ok:
+        return None
+    pick = dict(ok[0])
+    pick["floored"] = ok[0] is not within[0]
+    pick["target_strike"] = within[0]["strike"]             # where the delta rule alone would have put it
+    near = sorted(cands, key=lambda c: abs(c["strike"] - pick["strike"]))[:LADDER_SIZE + 2]
+    pick["ladder"] = sorted(near, key=lambda c: c["strike"])
+    return pick
+
+
+def screen_cc(api, sym, spot, cfg, today, earnings, hist_iv, cost):
+    exps = cc_expiries(api.expirations(sym), today, cfg.cc_dte_min, cfg.cc_dte_max)
+    if not exps:
+        return []
+    rv = realized_vol(api.closes(sym))
+    ref_iv, ref_gap, rows = None, 10 ** 9, []
+    for e, dte in exps:
+        chain = api.chain(sym, e)
+        a_iv = atm_iv(chain, spot)
+        if a_iv and abs(dte - 21) < ref_gap:
+            ref_iv, ref_gap = a_iv, abs(dte - 21)
+        leg = cc_leg(chain, spot, dte, a_iv, cost, cfg.cc_delta)
+        if not leg:
+            continue
+        earn = [d for d in (earnings or []) if today.isoformat() <= d <= e]
+        leg.update(symbol=sym, spot=spot, expiry=e, dte=dte, monthly=is_monthly(date.fromisoformat(e)),
+                   cost_basis=cost, spot_vs_cost=(spot / cost - 1) * 100, target_delta=cfg.cc_delta, atm_iv=a_iv,
+                   collateral=spot * 100, earnings=min(earn) if earn else None, earn_known=earnings is not None)
+        rows.append(leg)
+    ivr, n = (iv_rank(hist_iv, ref_iv, cfg.min_history) if ref_iv else (None, 0))
+    for r in rows:   # IV richness is information only: you hold the shares either way
+        r["ref_iv"], r["ivr"], r["ivr_n"], r["rv30"] = ref_iv, ivr, n, rv
+        r["iv_rv"] = (ref_iv / rv) if (ref_iv and rv) else None
+        r["liquid"] = (r["spread_pct"] is not None and r["spread_pct"] <= cfg.max_spread and r["oi"] >= cfg.min_oi)
+        r["pays"] = r["roc"] >= cfg.min_cc_yield
+        r["passes"] = bool(r["liquid"] and r["pays"] and not r["earnings"])
+    return rows
 
 
 def screen_symbol(api, sym, spot, cfg, today, earnings, hist_iv, target=None, own=None):
@@ -637,6 +752,12 @@ def main():
     ap.add_argument("--ivrv-min", type=float, default=1.2)
     ap.add_argument("--min-roc", type=float, default=25.0,
                     help="annualized ROC (%%) a put must pay to count as worth a look (default 25)")
+    ap.add_argument("--cc-delta", type=float, default=0.20,
+                    help="max |delta| of the covered call, roughly the chance of being called away (0.20)")
+    ap.add_argument("--cc-dte-min", type=int, default=5, help="skip covered-call expiries sooner than this (no dailies)")
+    ap.add_argument("--cc-dte-max", type=int, default=38, help="covered-call window: Friday/monthly expiries up to this many days out")
+    ap.add_argument("--min-cc-yield", type=float, default=10.0,
+                    help="annualized premium yield (%% of share price) a call must pay to count as worth a look (default 10)")
     ap.add_argument("--min-history", type=int, default=20, help="days of IV history before IV Rank is shown")
     ap.add_argument("--out", default=None, help="output dir (default public/, or public-mock/ with --mock)")
     ap.add_argument("--db", default=None)
@@ -666,6 +787,7 @@ def main():
     symbols = list(wl)
     deltas = {s: v["delta"] for s, v in wl.items() if v["delta"]}
     owns = {s: v["own"] for s, v in wl.items() if v["own"]}
+    costs = {s: v["cost"] for s, v in wl.items() if v["cost"]}
     if not symbols:
         sys.exit("watchlist is empty")
     for n_ in wl_notes:
@@ -686,15 +808,16 @@ def main():
         if not token:
             sys.exit("No Tradier token: set TRADIER_TOKEN in csp-screener/.env (see .env.example)")
         api = Tradier(token, os.environ.get("TRADIER_BASE_URL", "https://api.tradier.com/v1"))
-
     quotes = api.quotes(symbols)
+    api = Memo(api)
+
     session = quote_session(quotes, now)
     phase = run_phase(now, session)
     out = Path(cfg.out)
     # Persist (snapshot + IV history) unless this session already has a better run, e.g. an overnight preview
     # must not replace the 4:30pm run. Otherwise it only refreshes index.html / latest.*.
     recorded = PHASE_RANK[phase] >= saved_rank(out, session)
-    rows, wheel_rows, errors, ref = [], [], [], {}
+    rows, wheel_rows, cc_rows, errors, ref = [], [], [], [], {}
     for sym in symbols:
         try:
             q = quotes.get(sym)
@@ -702,7 +825,7 @@ def main():
             if not spot:
                 raise ValueError("no quote")
             earnings = (finnhub_earnings(fh_key, sym, today.isoformat(),
-                                         (today + timedelta(days=cfg.dte_max + 2)).isoformat())
+                                         (today + timedelta(days=max(cfg.dte_max, cfg.cc_dte_max if sym in costs else 0) + 2)).isoformat())
                         if fh_key else None)
             hist = [r[0] for r in con.execute(
                 "SELECT atm_iv FROM iv_daily WHERE symbol=? AND date<? ORDER BY date DESC LIMIT 252",
@@ -715,6 +838,12 @@ def main():
                 errors.append(f"{sym}: no put with a bid at or below ${owns[sym]:g} in {cfg.dte_min}-{cfg.dte_max} DTE (wheel view)")
             rows += r
             wheel_rows += w
+            if sym in costs:
+                c = screen_cc(api, sym, spot, cfg, today, earnings, hist, costs[sym])
+                if not c:
+                    errors.append(f"{sym}: no call with a bid at or above your ${costs[sym]:g} cost basis within "
+                                  f"{cfg.cc_delta:g}Δ in {cfg.cc_dte_min}-{cfg.cc_dte_max} DTE (covered calls)")
+                cc_rows += c
             ref[sym] = (ref_iv, rv, spot)
             print(f"{sym:6} {len(r)} expiries", file=sys.stderr)
         except Exception as ex:  # one bad ticker shouldn't kill the run
@@ -748,9 +877,10 @@ def main():
         "config": {"delta": cfg.delta, "dte_min": cfg.dte_min, "dte_max": cfg.dte_max, "min_oi": cfg.min_oi,
                    "max_spread": cfg.max_spread, "ivr_min": cfg.ivr_min, "ivrv_min": cfg.ivrv_min,
                    "min_history": cfg.min_history, "min_roc": cfg.min_roc, "custom_delta": deltas,
-                   "own_price": owns},
+                   "own_price": owns, "cost_basis": costs, "cc_delta": cfg.cc_delta,
+                   "cc_dte_min": cfg.cc_dte_min, "cc_dte_max": cfg.cc_dte_max, "min_cc_yield": cfg.min_cc_yield},
         "watchlist": {"source": wl_source, "notes": wl_notes},
-        "rows": rows, "wheel": wheel_rows, "history": history, "errors": errors,
+        "rows": rows, "wheel": wheel_rows, "cc": cc_rows, "history": history, "errors": errors,
     }
     write_pwa(out)
     (out / "latest.json").write_text(json.dumps(payload, indent=1))

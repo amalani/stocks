@@ -176,7 +176,7 @@ details{margin-top:12px;font-size:13px}
     </div></div>
   <div class="meta" id="meta"></div>
   <div id="banners"></div>
-  <div class="navrow"><div class="tabs" id="tabs"><button data-lens="income" class="on">Income · by delta</button><button data-lens="wheel" id="tab-wheel">Wheel · own price</button></div>
+  <div class="navrow"><div class="tabs" id="tabs"><button data-lens="income" class="on">Income · by delta</button><button data-lens="wheel" id="tab-wheel">Wheel · own price</button><button data-lens="cc" id="tab-cc">Covered calls · cost basis</button></div>
   <div class="nav" id="nav" hidden></div></div>
   <div class="top3" id="top3"></div>
 
@@ -272,7 +272,7 @@ const keyOf = r => r.symbol + '|' + r.expiry;
 
 // Two lenses over the same run: "income" (fixed delta per ticker) and "wheel" (strike at your own price).
 let lens = 'income';
-const src = () => lens === 'wheel' ? (D.wheel || []) : D.rows;
+const src = () => lens === 'wheel' ? (D.wheel || []) : lens === 'cc' ? (D.cc || []) : D.rows;
 const col = k => incomeCols.find(c => c.k === k);
 const wheelCols = [
   {k:'passes', label:'●', tip:'Worth a look for the wheel: liquid, pays at least the ROC hurdle, no earnings before expiry. Hover a row\'s ● for its reason. Click to group these first.',
@@ -288,6 +288,28 @@ const wheelCols = [
   {k:'net_cost', label:'Net cost', tip:'Strike minus the premium: your cost per share if assigned', html:r => '$' + num(r.net_cost)},
   {k:'net_below_spot_pct', label:'Below spot', tip:'How far your net cost is below today\'s price', html:r => pct(r.net_below_spot_pct)},
   {...col('ivr'), chk: undefined},   // information only here, not part of the ●
+  col('spread_pct'), col('oi'), col('earnings'), col('spark'),
+];
+const money = v => '$' + num(v, v % 1 ? 2 : 0);
+const ccCols = [
+  {k:'passes', label:'●', tip:'Worth a look for a covered call: liquid, pays at least the yield hurdle, no earnings before expiry. The strike is never below your cost basis. Hover a row\'s ● for its reason.',
+    ttip:r => reason(r), html:r => r.passes ? '<span class="dot">●</span>' : ''},
+  {k:'symbol', label:'Ticker', left:true, html:r => `<b>${esc(r.symbol)}</b>`},
+  col('spot'),
+  {k:'cost_basis', label:'Cost basis', tip:'What you paid per share (from your sheet or watchlist)', html:r => money(r.cost_basis)},
+  {k:'spot_vs_cost', label:'Spot vs cost', tip:'Today\'s price relative to your cost basis. Red means the shares are under water: calls are kept at or above your cost, so they sit further out and pay less.',
+    cls:r => r.spot_vs_cost < 0 ? 'bad' : '', html:r => (r.spot_vs_cost < 0 ? '<span class="tag bad">under</span> ' : '') + pct(r.spot_vs_cost)},
+  {k:'expiry', label:'Expiry', html:r => `${r.expiry.slice(5)} <span class="mute">${r.dte}d</span>` + (r.monthly ? ' <span class="tag cust" title="Monthly (third Friday) expiry">M</span>' : '')},
+  {k:'strike', label:'Strike', html:r => num(r.strike, r.strike % 1 ? 2 : 0) + (r.floored ? ` <span class="tag cust" title="${esc('Raised to your cost basis: the ' + num(r.target_delta) + 'Δ strike would be $' + num(r.target_strike, r.target_strike % 1 ? 2 : 0) + ', under your $' + num(r.cost_basis, r.cost_basis % 1 ? 2 : 0) + ' cost')}">floor</span>` : '')},
+  {k:'delta', label:'Called Δ', tip:'Call delta: roughly the chance the shares are called away at expiry', html:r => num(r.delta)},
+  col('mid'),
+  {k:'roc', label:'Ann. yield', tip:'mid / spot × 365 / DTE: premium as a yearly return on the share price. Compared with your yield hurdle.', cls:() => 'strong',
+    chk:r => r.pays == null ? null : (r.pays ? 'ok' : 'no'), html:r => pct(r.roc)},
+  {k:'upside_pct', label:'Room to strike', tip:'(strike − spot) / spot: how far the stock can rise before the shares would be called', html:r => pct(r.upside_pct)},
+  {k:'called_pct', label:'If called', tip:'(strike + premium − cost basis) / cost basis: your gain on the shares if they are called away', cls:r => r.called_pct < 0 ? 'bad' : '', html:r => pct(r.called_pct)},
+  {...col('em_mult'), tip:'Room to the strike in units of the 1σ expected move (ATM IV). 1× or more means the strike is outside the typical move.',
+    cls:r => r.em_mult == null ? '' : r.em_mult >= 1 ? 'good' : '', html:r => r.em_mult == null ? '–' : num(r.em_mult) + '×'},
+  {...col('ivr'), chk: undefined},   // information only here: you hold the shares either way
   col('spread_pct'), col('oi'), col('earnings'), col('spark'),
 ];
 let cols = incomeCols;
@@ -339,9 +361,16 @@ function topPicks() {
   return [...best.values()].sort((a, b) => b.roc - a.roc).slice(0, 6);
 }
 const WHEEL_HOWTO = 'Add an own price to a ticker (an "Own price" column in your sheet, or <code>AMD @480</code> in watchlist.txt) to see wheel setups here.';
+const CC_HOWTO = 'Add a cost basis to a ticker (a "Cost basis" column in your sheet, or <code>AMD $465</code> in watchlist.txt) to see covered calls on shares you hold.';
+const howto = () => lens === 'wheel' ? WHEEL_HOWTO : lens === 'cc' ? CC_HOWTO : '';
 function renderTop() {
   const wheel = lens === 'wheel', picks = topPicks();
-  const card = r => wheel
+  const card = r => lens === 'cc'
+    ? `<div class="t"><b>${esc(r.symbol)}</b><span class="roc">${pct(r.roc, 0)}<small> ann.</small></span></div>
+        <div class="m"><b>$${num(r.strike, r.strike % 1 ? 2 : 0)} call</b> · ${r.expiry.slice(5)} (${r.dte}d) · called Δ${num(r.delta)}<br>
+        <b>$${r.premium.toFixed(0)}</b> per 100 sh · strike ${pct(r.upside_pct)} above spot<br>
+        If called: ${pct(r.called_pct)} on cost · ${pct(r.spread_pct)} spread</div>`
+    : wheel
     ? `<div class="t"><b>${esc(r.symbol)}</b><span class="roc">${pct(r.roc, 0)}<small> ann.</small></span></div>
         <div class="m"><b>$${num(r.strike, r.strike % 1 ? 2 : 0)} put</b> · ${r.expiry.slice(5)} (${r.dte}d) · assign Δ${r.delta == null ? '–' : num(r.delta)}<br>
         Own at <b>$${num(r.net_cost)}</b> net · ${pct(r.net_below_spot_pct)} below spot<br>
@@ -350,9 +379,9 @@ function renderTop() {
         <div class="m"><b>$${num(r.strike, r.strike % 1 ? 2 : 0)} put</b> · ${r.expiry.slice(5)} (${r.dte}d) · Δ${num(r.delta)}<br>
         $${r.premium.toFixed(0)} on $${r.collateral.toLocaleString()} · ${pct(r.cushion_pct)} cushion<br>
         ${r.ivr != null ? 'IV Rank ' + num(r.ivr, 0) : 'IV ' + num(r.iv_rv) + '× realized'} · ${pct(r.spread_pct)} spread</div>`;
-  $('#top3').innerHTML = `<h2>${wheel ? 'Top wheel setups' : 'Top opportunities'} <span class="mute" style="font-weight:400">· best ● expiry per ticker, nearest ${PREF_DTE} days · click one for details</span></h2>` +
+  $('#top3').innerHTML = `<h2>${lens === 'cc' ? 'Top covered calls' : wheel ? 'Top wheel setups' : 'Top opportunities'} <span class="mute" style="font-weight:400">· best ● expiry per ticker, nearest ${PREF_DTE} days · click one for details</span></h2>` +
     (picks.length ? `<div class="cards">${picks.map(r => `<button class="card ${selected === keyOf(r) ? 'sel' : ''}" data-key="${esc(keyOf(r))}">${card(r)}</button>`).join('')}</div>`
-      : `<p class="mute" style="margin:0">${wheel && !src().length ? WHEEL_HOWTO : 'Nothing clears all the checks right now. That is a fine answer: the "Everything else" rows below say why each one fell short.'}</p>`);
+      : `<p class="mute" style="margin:0">${!src().length && howto() ? howto() : 'Nothing clears all the checks right now. That is a fine answer: the "Everything else" rows below say why each one fell short.'}</p>`);
 }
 
 function render() {
@@ -377,7 +406,7 @@ function render() {
     html += rowHTML(r, anyPass);
   });
   $('#tbl tbody').innerHTML = rows.length ? html :
-    `<tr><td colspan="${cols.length}" class="empty">${lens === 'wheel' && !src().length ? WHEEL_HOWTO : 'Nothing matches these filters.'}</td></tr>`;
+    `<tr><td colspan="${cols.length}" class="empty">${!src().length && howto() ? howto() : 'Nothing matches these filters.'}</td></tr>`;
   $('#count').textContent = `${rows.length} row${rows.length === 1 ? '' : 's'} · ${nPass} worth a look`;
 }
 
@@ -412,6 +441,7 @@ function chart(title, series, fmt) {
 
 // One plain-English line on why a row is (or is not) worth a look.
 function reason(r) {
+  if (r.cost_basis != null) return ccReason(r);
   if (r.own_price != null) return wheelReason(r);
   if (r.earnings) return `Skip: earnings ${r.earnings} before expiry`;
   const liq = r.spread_pct != null && r.spread_pct <= C.max_spread && r.oi >= C.min_oi;
@@ -421,6 +451,17 @@ function reason(r) {
   if (r.pays === false) return `Thin: ${pct(r.roc, 0)} annualized is under your ${C.min_roc}% hurdle`;
   const iv = r.ivr != null ? `IV Rank ${num(r.ivr, 0)}` : `IV ${num(r.iv_rv)}× realized`;
   return `Worth a look: pays ${pct(r.roc, 0)} annualized, ${iv}, ${pct(r.cushion_pct)} cushion${r.earn_known ? '' : ' (earnings unchecked)'}`;
+}
+
+// Covered call: you hold the shares, so the question is whether the premium is worth the capped upside.
+function ccReason(r) {
+  if (r.earnings) return `Skip: earnings ${r.earnings} before expiry`;
+  const liq = r.spread_pct != null && r.spread_pct <= C.max_spread && r.oi >= C.min_oi;
+  if (!liq) return `Skip: thin market (spread ${pct(r.spread_pct)}, OI ${r.oi.toLocaleString()})`;
+  if (r.pays === false) return `Thin: ${pct(r.roc, 0)} annualized is under your ${C.min_cc_yield}% hurdle` +
+    (r.floored ? `; your cost basis pushes the strike up to $${num(r.strike, r.strike % 1 ? 2 : 0)}, which is why it pays so little` : '');
+  return `Worth a look: collect $${r.premium.toFixed(0)} (${pct(r.roc, 0)} annualized), about ${(r.delta * 100).toFixed(0)}% chance of being called away at $${num(r.strike, r.strike % 1 ? 2 : 0)}, ` +
+    `${pct(r.called_pct)} over your cost if it is` + (r.earn_known ? '' : ' (earnings unchecked)');
 }
 
 // Wheel: you are happy to own it at your price, so the question is whether the payout and the market are good.
@@ -436,7 +477,7 @@ function wheelReason(r) {
 // The tests behind ●, with the actual numbers.
 function checklist(r) {
   const liq = r.spread_pct != null && r.spread_pct <= C.max_spread && r.oi >= C.min_oi;
-  const wheel = r.own_price != null;
+  const wheel = r.own_price != null || r.cost_basis != null;   // IV richness is information only on these tabs
   const items = [
     {s: liq ? 'ok' : 'no', t: 'Liquid',
      d: `spread ${pct(r.spread_pct)} (max ${C.max_spread}%) · open interest ${r.oi.toLocaleString()} (min ${C.min_oi})`},
@@ -444,7 +485,10 @@ function checklist(r) {
      d: r.ivr != null ? `IV Rank ${num(r.ivr, 0)} (needs ≥ ${C.ivr_min}), over ${r.ivr_n} days of history`
         : `IV/RV ${num(r.iv_rv)} (needs ≥ ${C.ivrv_min}). IV Rank starts after ${C.min_history} days of history (${r.ivr_n} so far)`}]),
     ...(r.pays == null ? [] : [{s: r.pays ? 'ok' : 'no', t: 'Pays enough',
-     d: `${pct(r.roc, 0)} annualized (hurdle ${C.min_roc}%)`}]),
+     d: `${pct(r.roc, 0)} annualized (hurdle ${r.cost_basis != null ? C.min_cc_yield : C.min_roc}%)`}]),
+    ...(r.cost_basis == null ? [] : [{s: 'ok', t: 'Strike at or above cost basis',
+     d: r.floored ? `raised from $${num(r.target_strike)} to $${num(r.strike)}: the ${num(r.target_delta)}Δ strike was under your $${num(r.cost_basis)} cost`
+        : `$${num(r.strike)} is above your $${num(r.cost_basis)} cost, so a call-away is a gain`}]),
     {s: r.earnings ? 'no' : (r.earn_known ? 'ok' : 'na'), t: 'No earnings before expiry',
      d: r.earnings ? `earnings ${r.earnings} is before ${r.expiry}` : (r.earn_known ? 'none found' : 'unknown: no earnings source is configured, check it yourself')},
   ];
@@ -454,7 +498,29 @@ function checklist(r) {
 }
 
 // Neighbouring strikes at the same expiry: the screened pick vs. going further out / closer in.
+function ccLadderHTML(r) {
+  const L = r.ladder;
+  if (!L || !L.length) return '';
+  const t = r.target_delta, isOver = x => x.delta > t + 1e-9 || x.strike < r.cost_basis - 1e-9;
+  const rowsHTML = L.map((x, i) => {                              // lowest strike (most premium, most call-away risk) first
+    const pick = x.strike === r.strike, over = isOver(x), edge = i > 0 && isOver(L[i - 1]) && !over;
+    const loss = x.called_pct < 0;
+    return `<tr class="${pick ? 'pick' : ''} ${over ? 'over' : ''} ${edge ? 'edge' : ''}">
+      <td class="l">${num(x.strike, x.strike % 1 ? 2 : 0)}${pick ? '<span class="lt">◀ screened pick</span>' : ''}</td>
+      <td>${num(x.delta)}</td><td>${num(x.mid)}</td><td>${pct(x.roc)}</td><td>${pct(x.upside_pct)}</td>
+      <td class="${loss ? 'bad' : ''}">${pct(x.called_pct)}</td>
+      <td>${x.em_mult == null ? '–' : num(x.em_mult) + '×'}</td>
+      <td class="${x.spread_pct == null || x.spread_pct > C.max_spread ? 'bad' : ''}">${pct(x.spread_pct)}</td>
+      <td class="${x.oi < C.min_oi ? 'bad' : ''}">${x.oi.toLocaleString()}</td>
+      <td>${x.iv == null ? '–' : pct(x.iv * 100, 0)}</td></tr>`;
+  }).join('');
+  return `<div class="ladder"><h3>Strikes at this expiry <span class="mute" style="font-weight:400">· greyed rows break a rule: above the ${num(t)}Δ target (likelier to be called) or under your $${num(r.cost_basis, r.cost_basis % 1 ? 2 : 0)} cost (called away at a loss)</span></h3>
+    <div class="tablewrap"><table><thead><tr><th class="l">Strike</th><th>Δ</th><th>Mid</th><th>Ann. yield</th><th>Room</th><th>If called</th><th>vs EM</th><th>Spread</th><th>OI</th><th>IV</th></tr></thead>
+    <tbody>${rowsHTML}</tbody></table></div></div>`;
+}
+
 function ladderHTML(r) {
+  if (r.cost_basis != null) return ccLadderHTML(r);
   const L = r.ladder;
   if (!L || !L.length) return '';
   const wheel = r.own_price != null, t = tgt(r);
@@ -476,8 +542,19 @@ function ladderHTML(r) {
     <tbody>${rowsHTML}</tbody></table></div></div>`;
 }
 
+function ccTakeHTML(r, hist) {
+  const under = r.spot_vs_cost < 0;
+  return `Selling 1 contract (100 shares) collects about <b>$${r.premium.toFixed(0)}</b>. If the stock stays below <b>$${num(r.strike)}</b> you keep that and the shares
+      (the premium also cushions a fall of ${pct(r.mid / r.spot * 100)}). If it finishes above, the shares are called away at $${num(r.strike)}: with the premium that is
+      <b>$${num(r.strike + r.mid)}</b>, <b>${pct(r.called_pct)}</b> over your $${num(r.cost_basis)} cost${r.upside_pct > 0 ? `, and ${pct(r.upside_pct)} above today's $${num(r.spot)}` : ''}.
+      Chance of that is roughly ${(r.delta * 100).toFixed(0)}%.
+      ${under ? `<br>Spot is ${pct(-r.spot_vs_cost)} <b>under your cost</b>, so this is the lowest-risk strike that still sells at or above cost${r.floored ? ` (the ${num(r.target_delta)}Δ strike alone would be $${num(r.target_strike)}, a loss if called)` : ''}. Going lower pays more but locks in a loss if called.` : ''}
+      ${hist}`;
+}
+
 function takeHTML(r, ivs) {
   const hist = `${ivs.length} day${ivs.length === 1 ? '' : 's'} of IV history${ivs.length ? `, range ${pct(Math.min(...ivs) * 100, 0)}–${pct(Math.max(...ivs) * 100, 0)}` : ''}.`;
+  if (r.cost_basis != null) return ccTakeHTML(r, hist);
   if (r.own_price == null) {
     return `Selling 1 contract collects about <b>$${(r.premium).toFixed(0)}</b> on <b>$${r.collateral.toLocaleString()}</b> collateral; break-even <b>$${num(r.strike - r.mid)}</b>.
         The strike is ${pct(r.cushion_pct)} below spot${r.em_mult != null ? `, ${num(r.em_mult)}× the 1σ expected move (${r.em_mult < 1 ? 'inside' : 'outside'} it)` : ''}.
@@ -497,7 +574,7 @@ function showDetail() {
   const ivs = h.map(p => p.iv).filter(v => v != null);
   $('#hist').hidden = false;
   $('#hist').innerHTML = `<div class="head">
-      <span><b style="font-size:15px">${esc(sym)}</b> · ${esc(r.expiry)} (${r.dte}d) · $${num(r.strike, r.strike % 1 ? 2 : 0)} put${r.own_price != null ? ` · own price $${num(r.own_price, r.own_price % 1 ? 2 : 0)}` : ''}
+      <span><b style="font-size:15px">${esc(sym)}</b> · ${esc(r.expiry)} (${r.dte}d) · $${num(r.strike, r.strike % 1 ? 2 : 0)} ${r.cost_basis != null ? 'call' : 'put'}${r.own_price != null ? ` · own price $${num(r.own_price, r.own_price % 1 ? 2 : 0)}` : ''}${r.cost_basis != null ? ` · cost basis $${num(r.cost_basis, r.cost_basis % 1 ? 2 : 0)}` : ''}
         · <b class="${r.passes ? 's-ok' : 'mute'}">${r.passes ? '● Worth a look' : 'Not on the shortlist'}</b></span>
       <button id="hx" aria-label="Close details" title="Close (Esc)">✕</button></div>
     <div class="reason ${r.passes ? 's-ok' : 'mute'}">${esc(reason(r))}</div>
@@ -508,7 +585,7 @@ function showDetail() {
     </div>
     <div class="charts" style="margin-top:16px">
       ${chart('ATM IV vs 30-day realized vol', [{name: 'IV', pts: mk('iv')}, {name: 'RV', pts: mk('rv')}], v => (v * 100).toFixed(0) + '%')}
-      ${r.own_price != null ? '' : chart(`Best annualized ROC at ≤${tgt(r).toFixed(2)}Δ`, [{name: 'ROC', pts: mk('roc')}], v => v.toFixed(0) + '%')}
+      ${r.own_price != null || r.cost_basis != null ? '' : chart(`Best annualized ROC at ≤${tgt(r).toFixed(2)}Δ`, [{name: 'ROC', pts: mk('roc')}], v => v.toFixed(0) + '%')}
     </div>`;
   $('#hx').onclick = closeDetail;
 }
@@ -546,7 +623,9 @@ function helpHTML() {
     <dt>Strike ladder</dt><dd>Click a row to see the puts around its target delta at that expiry. Greyed rows are above the target: more premium, more assignment risk. Use it to see what going one or two strikes further out costs in ROC, or what a richer strike would pay.</dd>
     <dt>Custom delta (≤0.30Δ badge)</dt><dd>A ticker with its own target in <code>watchlist.txt</code> (for example <code>AMD 0.30</code>), for names you are happy to be assigned on. Compare ROC within a ticker, not across tickers with different targets.</dd>
     <dt>Wheel tab</dt><dd>For tickers with an own price (the price you would be happy to own the stock at): the strike at or just below it, at each expiry. <b>Net cost</b> is strike minus premium, your per-share cost if assigned. <b>Below spot</b> is how far under today's price that is. <b>Assign Δ</b> is roughly the chance of being assigned. The ● needs liquidity, the ROC hurdle and no earnings; IV richness is information only, since you are happy to own it anyway.</dd>
-    <dt>Where own prices come from</dt><dd>An "Own price" column in your published Google Sheet tab (<code>WATCHLIST_URL</code> in .env), or <code>AMD @480</code> in watchlist.txt.</dd>
+    <dt>Covered calls tab</dt><dd>For tickers with a cost basis (shares you hold): Friday and monthly (M) expiries, the call at or below ${C.cc_delta != null ? C.cc_delta.toFixed(2) : 'the target'}Δ (<b>Called Δ</b>, roughly the chance the shares are called away), <b>never at a strike below your cost basis</b>. <b>Room to strike</b> is how far the stock can rise first; <b>If called</b> is your gain over cost with the premium included; <b>Ann. yield</b> is premium ÷ share price, annualized.</dd>
+    <dt>Spot above vs. below your cost</dt><dd>Above cost, the delta rule picks the strike and any call-away is a gain. Under cost, the strike is lifted to your cost (<b>floor</b> tag), so it sits further out and pays less. Selling lower collects more but locks in a loss if called; the strike ladder shows what each step costs.</dd>
+    <dt>Where own prices come from</dt><dd>An "Own price" column in your published Google Sheet tab (<code>WATCHLIST_URL</code> in .env), or <code>AMD @480</code> in watchlist.txt. Cost basis works the same way: a "Cost basis" column, or <code>AMD $465</code>.</dd>
   </dl>
   <h4>Controls</h4>
   <p><b>Rows per ticker</b> shrinks the list: "Best ROC" tends to pick the shortest expiry; "Nearest 14 DTE" keeps the one closest to two weeks. Shortlist rows win either way.</p>
@@ -562,30 +641,35 @@ function toggleHelp(force) {
 
 // ---- wiring -----------------------------------------------------------
 function csv() {
-  const keys = lens === 'wheel'
+  const keys = lens === 'cc'
+    ? ['symbol','spot','cost_basis','spot_vs_cost','expiry','dte','strike','delta','bid','ask','mid','premium','roc','upside_pct','called_pct','em_mult','ref_iv','ivr','spread_pct','oi','earnings','passes']
+    : lens === 'wheel'
     ? ['symbol','spot','own_price','spot_vs_own','expiry','dte','strike','delta','bid','ask','mid','premium','collateral','roc','net_cost','net_below_spot_pct','ref_iv','ivr','spread_pct','oi','earnings','passes']
     : ['symbol','spot','expiry','dte','strike','delta','bid','ask','mid','premium','collateral','roc','cushion_pct','em_mult','ref_iv','ivr','iv_rv','spread_pct','oi','earnings','passes'];
   const rows = filtered().sort((a, b) => b.roc - a.roc);
   const body = [keys.join(',')].concat(rows.map(r => keys.map(k => r[k] == null ? '' : (typeof r[k] === 'number' ? +r[k].toFixed(4) : r[k])).join(',')));
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([body.join('\n')], {type: 'text/csv'}));
-  a.download = 'csp-' + lens + '-' + D.generated.slice(0, 10) + '.csv';
+  a.download = (lens === 'income' ? 'csp' : lens) + '-' + D.generated.slice(0, 10) + '.csv';
   a.click();
 }
 
 function setLegend() {
   const hurdle = C.min_roc != null ? C.min_roc + '%' : 'your hurdle';
-  $('#legend').innerHTML = (lens === 'wheel'
+  const ccHurdle = C.min_cc_yield != null ? C.min_cc_yield + '%' : 'your hurdle';
+  $('#legend').innerHTML = (lens === 'cc'
+    ? `<b>●</b> = worth a look for a covered call: liquid, pays at least ${ccHurdle} annualized on the share price, no earnings before expiry. IV richness is not required, since you hold the shares anyway. Strikes are at most ${C.cc_delta != null ? C.cc_delta.toFixed(2) : ''}Δ (<b>Called Δ</b> is roughly the chance of being called away) and <b>never below your cost basis</b>; a <b>floor</b> tag means the cost basis pushed the strike up. <b>If called</b> is your gain on the shares, premium included.`
+    : lens === 'wheel'
     ? `<b>●</b> = worth a look for the wheel: liquid, pays at least ${hurdle} annualized, no earnings before expiry. IV richness is not required, since you are happy to own the stock at your price. <b>Net cost</b> is strike minus premium; <b>Assign Δ</b> is roughly the chance of being assigned. <b>Spot vs own</b> turns red when the stock is at or below your own price: the strike then follows spot, so update the price.`
     : `<b>●</b> = worth a look: liquid, IV elevated, pays at least ${hurdle} annualized, no earnings before expiry.`) +
     ` Hover a row's ● for its reason, or click the row to see which cells decided it. Press <b>?</b> (or the button at the top) for what each column means and what to look for.`;
 }
 
 function switchLens(l) {
-  lens = l; cols = l === 'wheel' ? wheelCols : incomeCols;
+  lens = l; cols = l === 'wheel' ? wheelCols : l === 'cc' ? ccCols : incomeCols;
   sort = {k: 'passes', dir: -1}; selected = null; $('#hist').hidden = true;
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.lens === l));
-  setLegend(); render();
+  fillExp(); setLegend(); render();
 }
 
 // ---- history navigation (manifest.js lists the saved sessions, newest first) ----
@@ -629,6 +713,10 @@ function buildNav(runs, sess) {
   pick.onchange = e => { setText(false); go({d: e.target.value}); };
 }
 
+function fillExp() {
+  $('#f-exp').innerHTML = '<option value="">All</option>' + [...new Set(src().map(r => r.expiry))].sort().map(e => `<option>${e}</option>`).join('');
+}
+
 function init() {
   const nCustom = Object.keys(C.custom_delta || {}).length;
   const live = D.recorded !== false && (D.phase === 'intraday' || D.phase === 'off');
@@ -646,16 +734,22 @@ function init() {
   (D.wheel || []).forEach(r => { spots[r.symbol] = r; });
   Object.values(spots).filter(r => r.spot_vs_own != null && r.spot_vs_own <= 0).sort((a, b) => a.spot_vs_own - b.spot_vs_own).forEach(r =>
     b.push(`${r.symbol} was $${num(r.spot)} at the last run, ${pct(-r.spot_vs_own)} below your $${num(r.own_price, r.own_price % 1 ? 2 : 0)} own price. Wheel strikes now follow spot, so revisit that price in the sheet.`));
+  const held = {};
+  (D.cc || []).forEach(r => { held[r.symbol] = r; });
+  Object.values(held).filter(r => r.spot_vs_cost < 0).sort((a, b) => a.spot_vs_cost - b.spot_vs_cost).forEach(r =>
+    b.push(`${r.symbol} was $${num(r.spot)} at the last run, ${pct(-r.spot_vs_cost)} under your $${num(r.cost_basis, r.cost_basis % 1 ? 2 : 0)} cost basis. Covered calls stay at or above your cost, so their strikes sit further out and pay less.`));
   ((D.watchlist && D.watchlist.notes) || []).forEach(n => b.push(n));
   if (D.mock) b.push('Mock data: synthetic numbers for testing the page, not market data.');
   const sess = D.session || D.generated.slice(0, 10);
   if (D.recorded === false) b.push(D.phase ? `Preview, not saved: the ${sess} session already has a better snapshot, or the market is closed. IV history was not updated.` : 'IV history was not updated for this run.');
   if (!D.earnings_source) b.push('No earnings source configured, so the Earnings column shows "?". Add a Finnhub key to enable it.');
   $('#banners').innerHTML = b.map(t => `<div class="banner">${esc(t)}</div>`).join('');
-  [...new Set(D.rows.map(r => r.expiry))].sort().forEach(e => $('#f-exp').insertAdjacentHTML('beforeend', `<option>${e}</option>`));
+  fillExp();
   $('#top3').addEventListener('click', e => { const c = e.target.closest('.card'); if (c) select(c.dataset.key); });
   const nOwn = Object.keys(C.own_price || {}).length;
   $('#tab-wheel').textContent = 'Wheel · own price' + (nOwn ? ` (${nOwn})` : '');
+  const nCost = Object.keys(C.cost_basis || {}).length;
+  $('#tab-cc').textContent = 'Covered calls · cost basis' + (nCost ? ` (${nCost})` : '');
   $('#tabs').addEventListener('click', e => { const t = e.target.closest('button[data-lens]'); if (t && t.dataset.lens !== lens) switchLens(t.dataset.lens); });
   if (D.watchlist && D.watchlist.source) $('#meta').textContent += ` · watchlist: ${D.watchlist.source}`;
   setLegend();
