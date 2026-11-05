@@ -799,6 +799,10 @@ def main():
                     help="refresh just one part of the page: 'puts' = Income + Wheel tabs, 'cc' = Covered calls tab "
                          "(only tickers with a cost basis are fetched). The other part is carried over from the "
                          "session's last saved run, so the page stays complete. Default: everything")
+    ap.add_argument("--symbols", default=None, metavar="AMD,NVDA",
+                    help="refresh only these watchlist tickers (comma-separated; they keep their delta / own price / "
+                         "cost basis from the watchlist). Everyone else is carried over from the session's last run. "
+                         "Combine with --only. (--tickers is a different flag: it picks the watchlist FILE)")
     ap.add_argument("--workers", type=int, default=4,
                     help="tickers screened in parallel (default 4). Hides latency only: all threads share a limiter "
                          "capped at 100 Tradier calls/min (the quota is 120/min per token)")
@@ -829,6 +833,13 @@ def main():
     except (ValueError, OSError) as ex:
         sys.exit(f"watchlist: {ex}")
     symbols = list(wl)
+    all_symbols = list(symbols)
+    if cfg.symbols:
+        want = [x.strip().upper() for x in cfg.symbols.replace(" ", ",").split(",") if x.strip()]
+        bad = [x for x in want if x not in wl]
+        if bad:
+            sys.exit(f"--symbols: not in the watchlist: {', '.join(bad)}")
+        symbols = [x for x in all_symbols if x in want]
     deltas = {s: v["delta"] for s, v in wl.items() if v["delta"]}
     owns = {s: v["own"] for s, v in wl.items() if v["own"]}
     costs = {s: v["cost"] for s, v in wl.items() if v["cost"]}
@@ -856,7 +867,7 @@ def main():
     if not do_puts:   # covered-call-only run: nothing to fetch for tickers without shares
         symbols = [s_ for s_ in symbols if s_ in costs]
         if not symbols:
-            sys.exit("--only cc: no ticker in the watchlist has a cost basis")
+            sys.exit("--only cc: none of the selected tickers has a cost basis")
     quotes = api.quotes(symbols)
     api = Memo(api)
 
@@ -869,7 +880,7 @@ def main():
     rows, wheel_rows, cc_rows, errors, ref = [], [], [], [], {}
     # A partial run keeps the other part from this session's last payload (never from an older day).
     prev, leg_times = None, {}
-    if cfg.only:
+    if cfg.only or cfg.symbols:
         for f in (out / "latest.json", out / "runs" / f"{session}.json"):
             try:
                 cand = json.loads(f.read_text())
@@ -879,18 +890,20 @@ def main():
                 prev = cand
                 break
         if prev is None:
-            print(f"--only {cfg.only}: no earlier run for session {session}; the other tabs will be empty "
-                  f"until a full run", file=sys.stderr)
+            print(f"partial run: no earlier run for session {session}; everything not refreshed now will be "
+                  f"empty until a full run", file=sys.stderr)
         else:
             leg_times = dict(prev.get("leg_times") or {})
             for k in ("puts", "cc"):
                 leg_times.setdefault(k, prev.get("generated_at"))
-            if do_puts:
-                cc_rows = list(prev.get("cc") or [])
-                errors += [e for e in prev.get("errors", []) if "(covered calls)" in e]
-            else:
-                rows, wheel_rows = list(prev.get("rows") or []), list(prev.get("wheel") or [])
-                errors += [e for e in prev.get("errors", []) if "(covered calls)" not in e]
+            fresh = set(symbols)   # a leg that runs replaces these tickers' rows; everything else is kept
+            keep = lambda lst, on: [r for r in (lst or []) if not (on and r.get("symbol") in fresh)]
+            rows, wheel_rows = keep(prev.get("rows"), do_puts), keep(prev.get("wheel"), do_puts)
+            cc_rows = keep(prev.get("cc"), do_cc)
+            for e in prev.get("errors", []):
+                is_cc = "(covered calls)" in e
+                if not ((do_cc if is_cc else do_puts) and e.split(":")[0] in fresh):
+                    errors.append(e)
     for k, on in (("puts", do_puts), ("cc", do_cc)):
         if on:
             leg_times[k] = now.isoformat()
@@ -955,7 +968,7 @@ def main():
         con.commit()
 
     history = {}
-    for sym in symbols:
+    for sym in all_symbols:
         history[sym] = [
             {"d": d, "iv": iv, "rv": rv, "spot": sp, "roc": roc}
             for d, iv, rv, sp, roc in con.execute(
@@ -966,7 +979,7 @@ def main():
     payload = {
         "generated": now.strftime("%Y-%m-%d %H:%M ET"), "generated_at": now.isoformat(), "mock": cfg.mock, "recorded": recorded,
         "session": session.isoformat(), "phase": phase,
-        "earnings_source": bool(fh_key), "only": cfg.only, "elapsed_s": round(elapsed, 1), "workers": cfg.workers, "leg_times": leg_times,
+        "earnings_source": bool(fh_key), "only": cfg.only, "subset": symbols if cfg.symbols else None, "elapsed_s": round(elapsed, 1), "workers": cfg.workers, "leg_times": leg_times,
         "config": {"delta": cfg.delta, "dte_min": cfg.dte_min, "dte_max": cfg.dte_max, "min_oi": cfg.min_oi,
                    "max_spread": cfg.max_spread, "ivr_min": cfg.ivr_min, "ivrv_min": cfg.ivrv_min,
                    "min_history": cfg.min_history, "min_roc": cfg.min_roc, "custom_delta": deltas,
