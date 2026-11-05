@@ -88,6 +88,7 @@ Still to check:
 - Two lenses (tabs): Income (by delta, the table above) and Wheel (own price). `lens`, `src()` (rows vs `D.wheel`), `incomeCols`/`wheelCols`.
   Wheel rows come from `wheel_leg()`: strike = highest put ≤ min(own, spot) with a bid; ● = liquid and pays and no earnings (no IV test).
   `wheelReason()` / wheel `checklist()` mirror that; keep in sync with `screen_symbol`.
+- Wheel staleness: `init()` computes `r.spot_vs_own` client-side (so old saved runs get it), adds a banner per ticker with spot ≤ own price, and a "page is N hours old" banner on index.html only (`ROOT === ''`) when the run is >26h old (weekend grace). Pages are static; spot is as of the last run.
 - Default sort is `passes` desc then ROC: "Worth a look" rows first, the rest dimmed, with group header rows.
 - ● = liquid AND rich AND `pays` (ann. ROC ≥ `--min-roc`, default 25) AND no earnings; the flags are computed in `screen_symbol`.
   `reason(r)` turns them into one line (Skip / Weak / Thin / Worth a look) for the ● tooltip, the details header and the
