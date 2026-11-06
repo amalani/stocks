@@ -719,6 +719,8 @@ function setLegend() {
 }
 
 function switchLens(l) {
+  // the tab lives in the URL hash so a refresh (or run-to-run nav) stays on it
+  try { history.replaceState(null, '', l === 'income' ? location.pathname + location.search : '#' + l); } catch (e) {}
   const pr = l === 'prices';
   ['#top3', '.bar', '.tablewrap.main', '#legend'].forEach(q => { document.querySelector(q).hidden = pr; });
   $('#prices').hidden = !pr;
@@ -733,7 +735,7 @@ function switchLens(l) {
 let navOlder = null, navNewer = null;
 const fmtDay = d => new Date(d + 'T12:00:00').toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'});
 const fmtShort = d => new Date(d + 'T12:00:00').toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric'});
-const runHref = (runs, d) => ROOT + (d === runs[0].d ? 'index.html' : 'runs/' + d + '.html');
+const runHref = (runs, d) => ROOT + (d === runs[0].d ? 'index.html' : 'runs/' + d + '.html') + (lens === 'income' ? '' : '#' + lens);
 function loadNav(sess) {
   const s = document.createElement('script');
   s.src = ROOT + 'manifest.js';
@@ -838,6 +840,8 @@ function init() {
   });
   $('#tbl tbody').addEventListener('click', e => { const tr = e.target.closest('tr[data-key]'); if (tr) select(tr.dataset.key); });
   render();
+  const want = location.hash.slice(1);
+  if (['wheel', 'cc', 'prices'].includes(want)) switchLens(want);
 }
 init();
 </script>
