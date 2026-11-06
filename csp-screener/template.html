@@ -56,7 +56,11 @@ h3{font-size:13px;margin:0 0 6px;font-weight:600}
 .nav a{color:var(--c0);font-size:13px}
 @media print{.nav{display:none}}
 .banner{background:var(--warnbg);color:var(--warn);padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:13px}
-.bar[hidden],#top3[hidden],#legend[hidden]{display:none}
+.tvgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.tvbox{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;min-height:60px}
+.tvbox h3{margin:0;padding:8px 12px 0;font-size:13px}
+.tvnote{color:var(--mute);font-size:12px;margin:8px 0 14px}
+.tvgrid[hidden],.bar[hidden],#top3[hidden],#legend[hidden]{display:none}
 .bar{display:flex;flex-wrap:wrap;gap:10px 12px;align-items:end;margin-bottom:12px}
 .bar label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mute)}
 .bar label.chk{flex-direction:row;align-items:center;gap:6px;color:var(--ink);font-size:13px;padding-bottom:6px}
@@ -135,7 +139,7 @@ svg text{font:11px system-ui,sans-serif;fill:var(--mute)}
 svg .grid{stroke:var(--line);stroke-width:1}
 svg .ln{fill:none;stroke-width:2;stroke-linejoin:round}
 /* top opportunities strip */
-.tabs{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin:0 0 14px}
+.tabs{max-width:100%;overflow-x:auto;display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin:0 0 14px}
 .tabs button{border:0;border-radius:0;padding:7px 14px;font-weight:600;color:var(--mute)}
 .tabs button+button{border-left:1px solid var(--line)}
 .tabs button.on{background:var(--sel);color:var(--ink)}
@@ -178,7 +182,7 @@ details{margin-top:12px;font-size:13px}
     </div></div>
   <div class="meta" id="meta"></div>
   <div id="banners"></div>
-  <div class="navrow"><div class="tabs" id="tabs"><button data-lens="income" class="on">Income · by delta</button><button data-lens="wheel" id="tab-wheel">Wheel · own price</button><button data-lens="cc" id="tab-cc">Covered calls · cost basis</button><button data-lens="prices">Prices</button></div>
+  <div class="navrow"><div class="tabs" id="tabs"><button data-lens="income" class="on">Income · by delta</button><button data-lens="wheel" id="tab-wheel">Wheel · own price</button><button data-lens="cc" id="tab-cc">Covered calls · cost basis</button><button data-lens="prices">Prices</button><button data-lens="charts">Charts</button><button data-lens="market">Market</button></div>
   <div class="nav" id="nav" hidden></div></div>
   <div class="top3" id="top3"></div>
 
@@ -200,7 +204,10 @@ details{margin-top:12px;font-size:13px}
 
   <div class="tablewrap main"><table id="tbl"><thead></thead><tbody></tbody></table></div>
 
+  <div id="live" hidden></div>
   <div class="tablewrap" id="prices" hidden></div>
+  <div id="charts" hidden></div>
+  <div id="market" hidden></div>
 
   <div class="panel" id="hist" hidden></div>
 
@@ -228,6 +235,7 @@ const $ = s => document.querySelector(s);
     if (t === 'system') delete root.dataset.theme; else root.dataset.theme = t;
     try { t === 'system' ? localStorage.removeItem('theme') : localStorage.setItem('theme', t); } catch (e) {}
     mark();
+    if (window.tvTheme) setTimeout(tvTheme, 0);
   });
   mark();
 })();
@@ -333,6 +341,54 @@ function spark(sym) {
   const last = pts[pts.length - 1].split(',');
   return `<svg width="${w}" height="${ht}" viewBox="0 0 ${w} ${ht}"><polyline points="${pts.join(' ')}" fill="none" stroke="var(--c0)" stroke-width="1.5"/><circle cx="${last[0]}" cy="${last[1]}" r="2" fill="var(--c0)"/></svg>`;
 }
+
+// ---- TradingView embeds (delayed quotes, loaded from tradingview.com; no Tradier calls, nothing shown offline) ----
+const TV_EXCH = {NYSEARCA: 'AMEX', NYSEAMERICAN: 'AMEX'};
+const tvSym = sym => { const x = (D.exch || {})[sym]; return x ? (TV_EXCH[x] || x) + ':' + sym : sym; };
+const tvDark = () => { const t = document.documentElement.dataset.theme; return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; };
+function tvWidget(el, name, cfg) {
+  const box = document.createElement('div'); box.className = 'tradingview-widget-container';
+  box.innerHTML = '<div class="tradingview-widget-container__widget"></div>';
+  const sc = document.createElement('script');
+  sc.src = `https://s3.tradingview.com/external-embedding/embed-widget-${name}.js`; sc.async = true;
+  sc.text = JSON.stringify({colorTheme: tvDark() ? 'dark' : 'light', locale: 'en', ...cfg});
+  box.appendChild(sc); el.appendChild(box);
+}
+const tvBox = (parent, title) => { const b = document.createElement('div'); b.className = 'tvbox'; if (title) b.innerHTML = `<h3>${esc(title)}</h3>`; parent.appendChild(b); return b; };
+const watchSyms = () => priceRows().map(r => r.sym);
+const TV_VIEWS = {
+  live(el) {
+    const syms = watchSyms();
+    tvWidget(tvBox(el), 'ticker-tape', {symbols: syms.map(s => ({proName: tvSym(s), title: s})), showSymbolLogo: true, isTransparent: true, displayMode: 'adaptive'});
+    el.insertAdjacentHTML('beforeend', '<p class="tvnote">Live strip and quotes above are delayed (about 15 min) and come from TradingView, so they need internet. The table below is each run\'s stored price.</p>');
+    tvWidget(tvBox(el), 'market-quotes', {width: '100%', height: Math.min(900, 120 + syms.length * 44), showSymbolLogo: true, isTransparent: false,
+      symbolsGroups: [{name: 'Watchlist', symbols: syms.map(s => ({name: tvSym(s), displayName: s}))}]});
+  },
+  charts(el) {
+    el.className = 'tvgrid';
+    watchSyms().forEach(s => tvWidget(tvBox(el), 'mini-symbol-overview', {symbol: tvSym(s), width: '100%', height: 220, dateRange: '1M', isTransparent: false, autosize: false, largeChartUrl: ''}));
+  },
+  market(el) {
+    const wide = (title, name, cfg) => { const b = tvBox(el, title); b.style.marginBottom = '12px'; tvWidget(b, name, {width: '100%', isTransparent: false, ...cfg}); };
+    wide('Markets', 'market-overview', {height: 500, dateRange: '12M', showChart: true, showSymbolLogo: true, showFloatingTooltip: false,
+      tabs: [{title: 'Indices', symbols: [{s: 'FOREXCOM:SPXUSD', d: 'S&P 500'}, {s: 'FOREXCOM:NSXUSD', d: 'Nasdaq 100'}, {s: 'FOREXCOM:DJI', d: 'Dow 30'}, {s: 'TVC:VIX', d: 'VIX'}, {s: 'AMEX:IWM', d: 'Russell 2000 (IWM)'}]},
+             {title: 'Rates & dollar', symbols: [{s: 'TVC:US10Y', d: 'US 10Y yield'}, {s: 'TVC:US02Y', d: 'US 2Y yield'}, {s: 'TVC:DXY', d: 'US dollar index'}]}]});
+    wide('Stock heatmap (S&P 500, by sector)', 'stock-heatmap', {height: 560, dataSource: 'SPX500', grouping: 'sector', blockSize: 'market_cap_basic', blockColor: 'change', hasTopBar: false, isZoomEnabled: true, hasSymbolTooltip: true, isMonoSize: false, exchanges: []});
+    wide('Economic calendar (US)', 'events', {height: 560, importanceFilter: '-1,0,1', countryFilter: 'us'});
+  },
+};
+const tvDone = {};
+function tvMount(view, id) {
+  const el = $('#' + id); if (!el) return;
+  if (tvDone[id]) return;
+  tvDone[id] = true; el.innerHTML = ''; TV_VIEWS[view](el);
+}
+function tvTheme() {                       // widgets bake the theme in, so rebuild them when it changes
+  Object.keys(tvDone).forEach(k => delete tvDone[k]);
+  const m = {prices: ['live', 'live'], charts: ['charts', 'charts'], market: ['market', 'market']}[lens];
+  if (m) tvMount(m[0], m[1]);
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', tvTheme);
 
 // ---- Prices tab: spot per ticker from this run + the stored daily history (no extra API calls) ----
 // Google Finance needs EXCHANGE:SYMBOL (payload.exch, from the Tradier quote); older runs without it fall back to a Google search.
@@ -686,7 +742,8 @@ function toggleHelp(force) {
 
 // ---- wiring -----------------------------------------------------------
 function csv() {
-  if (lens === 'prices') {
+  if (lens === 'prices' || lens === 'charts' || lens === 'market') {
+    if (lens !== 'prices') return;
     const body = ['symbol,price,day_pct,since_first_pct,low,high,days'].concat(priceRows().map(r => [r.sym, r.last, r.day, r.since, r.lo, r.hi, r.h.length].map(v => v == null ? '' : typeof v === 'number' ? +v.toFixed(4) : v).join(',')));
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([body.join('\n')], {type: 'text/csv'}));
@@ -721,10 +778,15 @@ function setLegend() {
 function switchLens(l) {
   // the tab lives in the URL hash so a refresh (or run-to-run nav) stays on it
   try { history.replaceState(null, '', l === 'income' ? location.pathname + location.search : '#' + l); } catch (e) {}
-  const pr = l === 'prices';
+  const pr = ['prices', 'charts', 'market'].includes(l);
   ['#top3', '.bar', '.tablewrap.main', '#legend'].forEach(q => { document.querySelector(q).hidden = pr; });
-  $('#prices').hidden = !pr;
-  if (pr) { lens = l; selected = null; $('#hist').hidden = true; document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.lens === l)); renderPrices(); return; }
+  $('#prices').hidden = $('#live').hidden = l !== 'prices'; $('#charts').hidden = l !== 'charts'; $('#market').hidden = l !== 'market';
+  if (pr) {
+    lens = l; selected = null; $('#hist').hidden = true;
+    document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.lens === l));
+    if (l === 'prices') { tvMount('live', 'live'); renderPrices(); } else tvMount(l, l);
+    return;
+  }
   lens = l; cols = l === 'wheel' ? wheelCols : l === 'cc' ? ccCols : incomeCols;
   sort = {k: 'passes', dir: -1}; selected = null; $('#hist').hidden = true;
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.lens === l));
@@ -841,7 +903,7 @@ function init() {
   $('#tbl tbody').addEventListener('click', e => { const tr = e.target.closest('tr[data-key]'); if (tr) select(tr.dataset.key); });
   render();
   const want = location.hash.slice(1);
-  if (['wheel', 'cc', 'prices'].includes(want)) switchLens(want);
+  if (['wheel', 'cc', 'prices', 'charts', 'market'].includes(want)) switchLens(want);
 }
 init();
 </script>

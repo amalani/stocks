@@ -15,7 +15,7 @@ Owner's trading rules the screener encodes (change via CLI flags, not by editing
 - `screener.py`: everything: Tradier client, `Mock` client, metrics, SQLite, output. Stdlib only, Python 3.9+.
 - Watchlist source: `load_watchlist(path, url)` reads a published Google Sheet CSV (`WATCHLIST_URL`, never echoed or logged) with fallback to `watchlist.txt`; `watchlist.txt` lines accept `TICKER [delta] [@own_price]`.
 - `template.html`: the page. `screener.py` replaces the literal `/*__DATA__*/null` with the JSON payload and writes
-  `public/index.html`. Vanilla JS, no CDN, so it works offline on a locked-down server.
+  `public/index.html`. Vanilla JS, no CDN (except the optional TradingView embeds, see below), so it works offline on a locked-down server.
 - `watchlist.txt`: tickers, `#` comments. Optional per-ticker max put delta after the ticker (`AMD 0.30`); default is `--delta`.
 - Covered calls (`cc_leg` / `screen_cc`, payload `cc`, tab 3 in the page): watchlist `$465` / sheet "Cost basis" column = shares held.
   Expiries = one per week (Friday, Thursday if holiday) in `--cc-dte-min..max`; pick = highest call delta ≤ `--cc-delta` with strike ≥ cost
@@ -114,4 +114,5 @@ Still to check:
 - The help drawer (`? How to read this`, or the `?` key) is built in `helpHTML()` from `config`, so thresholds there never drift.
 - "Rows per ticker" (All / Best ROC / Nearest 14 DTE) is client-side only; `PREF_DTE` is a JS constant, not a CLI flag.
 - Prices tab (4th, `lens === 'prices'`): ticker, last spot, day / since-first change, range, trendline, ticker links to Google Finance (`gfUrl`, `quote/SYM:EXCH` from payload `exch`, which comes from the Tradier quote; fallback Google search). Built client-side by `priceRows()` from `D.history[sym].spot` (+ this run's spot) so it costs no API calls; its own `#prices` container, the filter bar/cards/table are hidden while it is active.
+- Charts and Market tabs + a live strip on Prices: TradingView embed widgets (`tvWidget`, `TV_VIEWS`; ticker-tape, market-quotes, mini-symbol-overview, market-overview, stock-heatmap, events). They load scripts from s3.tradingview.com at runtime (delayed ~15 min, internet needed, https/http only, not file://), so they are the one exception to the no-CDN rule and just stay blank offline. Symbols use `tvSym()` (`EXCH:SYM` from payload `exch`). Widgets bake in the theme, so `tvTheme()` rebuilds them on theme change. The active tab lives in the URL hash.
 - After editing the template run `python3 screener.py --rerender` (or `--mock --rerender`) to apply it to saved pages.
