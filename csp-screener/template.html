@@ -359,8 +359,7 @@ const watchSyms = () => priceRows().map(r => r.sym);
 const TV_VIEWS = {
   live(el) {
     const syms = watchSyms();
-    tvWidget(tvBox(el), 'ticker-tape', {symbols: syms.map(s => ({proName: tvSym(s), title: s})), showSymbolLogo: true, isTransparent: true, displayMode: 'adaptive'});
-    el.insertAdjacentHTML('beforeend', '<p class="tvnote">Live strip and quotes above are delayed (about 15 min) and come from TradingView, so they need internet. The table below is each run\'s stored price.</p>');
+    el.insertAdjacentHTML('beforeend', '<p class="tvnote">Live quotes above are delayed (about 15 min) and come from TradingView, so they need internet. The table below is each run\'s stored price.</p>');
     tvWidget(tvBox(el), 'market-quotes', {width: '100%', height: Math.min(900, 120 + syms.length * 44), showSymbolLogo: true, isTransparent: false,
       symbolsGroups: [{name: 'Watchlist', symbols: syms.map(s => ({name: tvSym(s), displayName: s}))}]});
   },
@@ -374,7 +373,6 @@ const TV_VIEWS = {
       tabs: [{title: 'Indices', symbols: [{s: 'FOREXCOM:SPXUSD', d: 'S&P 500'}, {s: 'FOREXCOM:NSXUSD', d: 'Nasdaq 100'}, {s: 'FOREXCOM:DJI', d: 'Dow 30'}, {s: 'TVC:VIX', d: 'VIX'}, {s: 'AMEX:IWM', d: 'Russell 2000 (IWM)'}]},
              {title: 'Rates & dollar', symbols: [{s: 'TVC:US10Y', d: 'US 10Y yield'}, {s: 'TVC:US02Y', d: 'US 2Y yield'}, {s: 'TVC:DXY', d: 'US dollar index'}]}]});
     wide('Stock heatmap (S&P 500, by sector)', 'stock-heatmap', {height: 560, dataSource: 'SPX500', grouping: 'sector', blockSize: 'market_cap_basic', blockColor: 'change', hasTopBar: false, isZoomEnabled: true, hasSymbolTooltip: true, isMonoSize: false, exchanges: []});
-    wide('Economic calendar (US)', 'events', {height: 560, importanceFilter: '-1,0,1', countryFilter: 'us'});
   },
 };
 const tvDone = {};
