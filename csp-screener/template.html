@@ -56,6 +56,7 @@ h3{font-size:13px;margin:0 0 6px;font-weight:600}
 .nav a{color:var(--c0);font-size:13px}
 @media print{.nav{display:none}}
 .banner{background:var(--warnbg);color:var(--warn);padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:13px}
+.bar[hidden],#top3[hidden],#legend[hidden]{display:none}
 .bar{display:flex;flex-wrap:wrap;gap:10px 12px;align-items:end;margin-bottom:12px}
 .bar label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mute)}
 .bar label.chk{flex-direction:row;align-items:center;gap:6px;color:var(--ink);font-size:13px;padding-bottom:6px}
@@ -176,7 +177,7 @@ details{margin-top:12px;font-size:13px}
     </div></div>
   <div class="meta" id="meta"></div>
   <div id="banners"></div>
-  <div class="navrow"><div class="tabs" id="tabs"><button data-lens="income" class="on">Income · by delta</button><button data-lens="wheel" id="tab-wheel">Wheel · own price</button><button data-lens="cc" id="tab-cc">Covered calls · cost basis</button></div>
+  <div class="navrow"><div class="tabs" id="tabs"><button data-lens="income" class="on">Income · by delta</button><button data-lens="wheel" id="tab-wheel">Wheel · own price</button><button data-lens="cc" id="tab-cc">Covered calls · cost basis</button><button data-lens="prices">Prices</button></div>
   <div class="nav" id="nav" hidden></div></div>
   <div class="top3" id="top3"></div>
 
@@ -197,6 +198,8 @@ details{margin-top:12px;font-size:13px}
   </div>
 
   <div class="tablewrap main"><table id="tbl"><thead></thead><tbody></tbody></table></div>
+
+  <div class="tablewrap" id="prices" hidden></div>
 
   <div class="panel" id="hist" hidden></div>
 
@@ -328,6 +331,41 @@ function spark(sym) {
   const pts = vs.map((v, i) => `${(i / (vs.length - 1) * w).toFixed(1)},${(ht - 2 - (v - lo) / ((hi - lo) || 1) * (ht - 4)).toFixed(1)}`);
   const last = pts[pts.length - 1].split(',');
   return `<svg width="${w}" height="${ht}" viewBox="0 0 ${w} ${ht}"><polyline points="${pts.join(' ')}" fill="none" stroke="var(--c0)" stroke-width="1.5"/><circle cx="${last[0]}" cy="${last[1]}" r="2" fill="var(--c0)"/></svg>`;
+}
+
+// ---- Prices tab: spot per ticker from this run + the stored daily history (no extra API calls) ----
+const gfUrl = sym => 'https://www.google.com/finance/?q=' + encodeURIComponent(sym);
+function priceRows() {
+  const spot = {};
+  [D.rows, D.wheel || [], D.cc || []].forEach(a => a.forEach(r => { if (r.spot != null) spot[r.symbol] = r.spot; }));
+  const sess = D.session || D.generated.slice(0, 10);
+  const syms = new Set([...Object.keys(spot), ...Object.keys(D.history || {})]);
+  return [...syms].sort().map(sym => {
+    const h = (D.history[sym] || []).filter(p => p.spot != null).map(p => ({d: p.d, v: p.spot}));
+    if (spot[sym] != null) { if (h.length && h[h.length - 1].d === sess) h[h.length - 1].v = spot[sym]; else h.push({d: sess, v: spot[sym]}); }
+    const last = h.length ? h[h.length - 1].v : null;
+    const prev = h.length > 1 ? h[h.length - 2].v : null, first = h.length > 1 ? h[0].v : null;
+    const vs = h.map(p => p.v);
+    return {sym, h, last, day: prev ? (last / prev - 1) * 100 : null, since: first ? (last / first - 1) * 100 : null,
+            lo: vs.length ? Math.min(...vs) : null, hi: vs.length ? Math.max(...vs) : null, from: h.length ? h[0].d : null};
+  });
+}
+function priceSpark(h) {
+  if (h.length < 2) return '<span class="mute">–</span>';
+  const w = 140, ht = 28, vs = h.map(p => p.v), lo = Math.min(...vs), hi = Math.max(...vs);
+  const pts = vs.map((v, i) => `${(i / (vs.length - 1) * w).toFixed(1)},${(ht - 3 - (v - lo) / ((hi - lo) || 1) * (ht - 6)).toFixed(1)}`);
+  const up = vs[vs.length - 1] >= vs[0], c = up ? 'var(--good)' : 'var(--bad)', e = pts[pts.length - 1].split(',');
+  return `<svg width="${w}" height="${ht}" viewBox="0 0 ${w} ${ht}"><polyline points="${pts.join(' ')}" fill="none" stroke="${c}" stroke-width="1.5"/><circle cx="${e[0]}" cy="${e[1]}" r="2" fill="${c}"/></svg>`;
+}
+function renderPrices() {
+  const chg = v => v == null ? '<td>–</td>' : `<td class="${v >= 0 ? 'good' : 'bad'}">${v >= 0 ? '+' : ''}${v.toFixed(1)}%</td>`;
+  const rows = priceRows();
+  $('#prices').innerHTML = `<table><thead><tr><th class="l">Ticker</th><th>Price</th><th title="Change vs the previous stored session">Day</th><th title="Change since the first stored session">Since first</th><th title="Low – high over the stored sessions">Range</th><th class="nosort">Trend</th><th class="nosort l">Days</th></tr></thead><tbody>` +
+    rows.map(r => `<tr><td class="l"><b>${esc(r.sym)}</b> <a href="${gfUrl(r.sym)}" target="_blank" rel="noopener" title="Open ${esc(r.sym)} on Google Finance">Google Finance ↗</a></td>
+      <td class="strong">${r.last == null ? '–' : '$' + num(r.last)}</td>${chg(r.day)}${chg(r.since)}
+      <td>${r.lo == null || r.lo === r.hi ? '–' : '$' + num(r.lo) + ' – $' + num(r.hi)}</td><td>${priceSpark(r.h)}</td>
+      <td class="l mute">${r.h.length}${r.from ? ' since ' + r.from.slice(5) : ''}</td></tr>`).join('') + '</tbody></table>' +
+    `<p class="mute" style="margin:8px 0 0;font-size:12px">Prices are each run's last quote (one point per trading session), not live. The trend only covers the sessions the screener has stored.</p>`;
 }
 
 const cmpArr = (a, b) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] > b[i] ? 1 : -1; return 0; };
@@ -646,6 +684,14 @@ function toggleHelp(force) {
 
 // ---- wiring -----------------------------------------------------------
 function csv() {
+  if (lens === 'prices') {
+    const body = ['symbol,price,day_pct,since_first_pct,low,high,days'].concat(priceRows().map(r => [r.sym, r.last, r.day, r.since, r.lo, r.hi, r.h.length].map(v => v == null ? '' : typeof v === 'number' ? +v.toFixed(4) : v).join(',')));
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([body.join('\n')], {type: 'text/csv'}));
+    a.download = 'prices-' + D.generated.slice(0, 10) + '.csv';
+    a.click();
+    return;
+  }
   const keys = lens === 'cc'
     ? ['symbol','spot','cost_basis','spot_vs_cost','expiry','dte','strike','delta','bid','ask','mid','premium','roc','upside_pct','called_pct','em_mult','ref_iv','ivr','spread_pct','oi','earnings','passes']
     : lens === 'wheel'
@@ -671,6 +717,10 @@ function setLegend() {
 }
 
 function switchLens(l) {
+  const pr = l === 'prices';
+  ['#top3', '.bar', '.tablewrap.main', '#legend'].forEach(q => { document.querySelector(q).hidden = pr; });
+  $('#prices').hidden = !pr;
+  if (pr) { lens = l; selected = null; $('#hist').hidden = true; document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.lens === l)); renderPrices(); return; }
   lens = l; cols = l === 'wheel' ? wheelCols : l === 'cc' ? ccCols : incomeCols;
   sort = {k: 'passes', dir: -1}; selected = null; $('#hist').hidden = true;
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.lens === l));
