@@ -113,5 +113,5 @@ Still to check:
   `window.RUNS`; `ROOT` is `""` for index.html and `"../"` for runs/*.html (injected by `render_page`). Missing manifest = no nav.
 - The help drawer (`? How to read this`, or the `?` key) is built in `helpHTML()` from `config`, so thresholds there never drift.
 - "Rows per ticker" (All / Best ROC / Nearest 14 DTE) is client-side only; `PREF_DTE` is a JS constant, not a CLI flag.
-- Prices tab (4th, `lens === 'prices'`): ticker, last spot, day / since-first change, range, trendline, link to Google Finance (`gfUrl`, `?q=SYMBOL`). Built client-side by `priceRows()` from `D.history[sym].spot` (+ this run's spot) so it costs no API calls; its own `#prices` container, the filter bar/cards/table are hidden while it is active.
+- Prices tab (4th, `lens === 'prices'`): ticker, last spot, day / since-first change, range, trendline, ticker links to Google Finance (`gfUrl`, `quote/SYM:EXCH` from payload `exch`, which comes from the Tradier quote; fallback Google search). Built client-side by `priceRows()` from `D.history[sym].spot` (+ this run's spot) so it costs no API calls; its own `#prices` container, the filter bar/cards/table are hidden while it is active.
 - After editing the template run `python3 screener.py --rerender` (or `--mock --rerender`) to apply it to saved pages.

@@ -334,7 +334,8 @@ function spark(sym) {
 }
 
 // ---- Prices tab: spot per ticker from this run + the stored daily history (no extra API calls) ----
-const gfUrl = sym => 'https://www.google.com/finance/?q=' + encodeURIComponent(sym);
+// Google Finance needs EXCHANGE:SYMBOL (payload.exch, from the Tradier quote); older runs without it fall back to a Google search.
+const gfUrl = sym => (D.exch || {})[sym] ? `https://www.google.com/finance/quote/${encodeURIComponent(sym)}:${D.exch[sym]}` : 'https://www.google.com/search?q=' + encodeURIComponent(sym + ' stock');
 function priceRows() {
   const spot = {};
   [D.rows, D.wheel || [], D.cc || []].forEach(a => a.forEach(r => { if (r.spot != null) spot[r.symbol] = r.spot; }));
@@ -361,7 +362,7 @@ function renderPrices() {
   const chg = v => v == null ? '<td>–</td>' : `<td class="${v >= 0 ? 'good' : 'bad'}">${v >= 0 ? '+' : ''}${v.toFixed(1)}%</td>`;
   const rows = priceRows();
   $('#prices').innerHTML = `<table><thead><tr><th class="l">Ticker</th><th>Price</th><th title="Change vs the previous stored session">Day</th><th title="Change since the first stored session">Since first</th><th title="Low – high over the stored sessions">Range</th><th class="nosort">Trend</th><th class="nosort l">Days</th></tr></thead><tbody>` +
-    rows.map(r => `<tr><td class="l"><b>${esc(r.sym)}</b> <a href="${gfUrl(r.sym)}" target="_blank" rel="noopener" title="Open ${esc(r.sym)} on Google Finance">Google Finance ↗</a></td>
+    rows.map(r => `<tr><td class="l"><a href="${gfUrl(r.sym)}" target="_blank" rel="noopener" title="Open ${esc(r.sym)} on Google Finance"><b>${esc(r.sym)}</b></a></td>
       <td class="strong">${r.last == null ? '–' : '$' + num(r.last)}</td>${chg(r.day)}${chg(r.since)}
       <td>${r.lo == null || r.lo === r.hi ? '–' : '$' + num(r.lo) + ' – $' + num(r.hi)}</td><td>${priceSpark(r.h)}</td>
       <td class="l mute">${r.h.length}${r.from ? ' since ' + r.from.slice(5) : ''}</td></tr>`).join('') + '</tbody></table>' +

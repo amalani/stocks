@@ -147,7 +147,7 @@ class Mock:
                     rv=rng.uniform(0.18, 0.6), oi=rng.choice([40, 300, 1500, 6000]))
 
     def quotes(self, symbols):
-        return {s: {"symbol": s, "last": self._p(s)["spot"]} for s in symbols}
+        return {s: {"symbol": s, "last": self._p(s)["spot"], "exch": "Q"} for s in symbols}
 
     def expirations(self, sym):
         d, out = self.today, []
@@ -976,6 +976,12 @@ def main():
                 "(SELECT MAX(roc) FROM picks p WHERE p.date=d.date AND p.symbol=d.symbol) "
                 "FROM iv_daily d WHERE d.symbol=? ORDER BY d.date DESC LIMIT 365", (sym,))][::-1]
 
+    # Google Finance wants EXCHANGE:SYMBOL; Tradier's quote carries the exchange code (no extra call). Keep earlier values for carried tickers.
+    gx = {"Q": "NASDAQ", "N": "NYSE", "P": "NYSEARCA", "A": "NYSEAMERICAN", "B": "NASDAQ", "X": "NASDAQ"}
+    exch = dict((prev or {}).get("exch") or {})
+    for sym_, q_ in quotes.items():
+        if gx.get(q_.get("exch")):
+            exch[sym_] = gx[q_["exch"]]
     payload = {
         "generated": now.strftime("%Y-%m-%d %H:%M ET"), "generated_at": now.isoformat(), "mock": cfg.mock, "recorded": recorded,
         "session": session.isoformat(), "phase": phase,
@@ -987,7 +993,7 @@ def main():
                    "cc_dte_min": cfg.cc_dte_min, "cc_dte_max": cfg.cc_dte_max, "min_cc_yield": cfg.min_cc_yield,
                    "cc_max_spread_abs": cfg.cc_max_spread_abs},
         "watchlist": {"source": wl_source, "notes": wl_notes},
-        "rows": rows, "wheel": wheel_rows, "cc": cc_rows, "history": history, "errors": errors,
+        "rows": rows, "wheel": wheel_rows, "cc": cc_rows, "history": history, "exch": exch, "errors": errors,
     }
     write_pwa(out)
     (out / "latest.json").write_text(json.dumps(payload, indent=1))
