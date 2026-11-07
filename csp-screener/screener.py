@@ -314,7 +314,8 @@ def _check(sym, delta, own, cost=None):
 
 
 def parse_watchlist_lines(lines):
-    """Text format, one ticker per line: AMD | AMD 0.30 | AMD @480 | AMD 0.30 @480 $465   ('#' = comment).
+    """Text format, one ticker per line: AMD | AMD 0.30 | AMD @480 | AMD 0.30 @480 $465 | GOOG 0.25 INCOME   ('#' = comment).
+    INCOME marks a steady name sold for regular income: no IV-richness gate and a lower annualized hurdle.
     0.30 is the max put delta for that ticker; @480 is the price you would be happy to own it at;
     $465 is the cost basis of shares you already hold (turns on the covered-call view)."""
     wl = {}
@@ -328,9 +329,12 @@ def parse_watchlist_lines(lines):
         if sym in wl:
             continue
         delta = own = cost = None
+        income = False
         for p in parts[1:]:
             try:
-                if p.startswith("@"):
+                if p == "INCOME":
+                    income = True
+                elif p.startswith("@"):
                     own = parse_num(p[1:])
                 elif p.startswith("$"):
                     cost = parse_num(p[1:])
@@ -339,7 +343,7 @@ def parse_watchlist_lines(lines):
             except ValueError:
                 raise ValueError(f"{sym}: can't read {p!r} (use e.g. 'AMD 0.30 @480 $465')")
         _check(sym, delta, own, cost)
-        wl[sym] = {"delta": delta, "own": own, "cost": cost}
+        wl[sym] = {"delta": delta, "own": own, "cost": cost, "income": income}
     return wl
 
 
@@ -359,9 +363,10 @@ def parse_watchlist_csv(text):
     if i_t is None:
         if not TICKER_RE.match(rows[0][0].strip().upper()):
             raise ValueError("no Ticker column found in the sheet")
-        i_t, i_d, i_o, i_c, body = 0, 1, 2, 3, rows
+        i_t, i_d, i_o, i_c, i_i, body = 0, 1, 2, 3, None, rows
     else:
         i_c = col("cost", "basis")
+        i_i = col("income", "style", "profile")
         i_o = next((i for i, h in enumerate(head) if i != i_c and any(n in h for n in ("own", "buy", "hold", "price"))), None)
         i_d, body = col("delta"), rows[1:]
     wl, notes = {}, []
@@ -379,7 +384,8 @@ def parse_watchlist_csv(text):
         except ValueError as ex:
             notes.append(f"sheet: {ex}; using defaults for {sym}")
             delta = own = cost = None
-        wl[sym] = {"delta": delta, "own": own, "cost": cost}
+        income = cell(i_i).lower() in ("y", "yes", "true", "1", "x", "income")
+        wl[sym] = {"delta": delta, "own": own, "cost": cost, "income": income}
     return wl, notes
 
 
@@ -535,7 +541,7 @@ def screen_cc(api, sym, spot, cfg, today, earnings, hist_iv, cost):
     return rows
 
 
-def screen_symbol(api, sym, spot, cfg, today, earnings, hist_iv, target=None, own=None):
+def screen_symbol(api, sym, spot, cfg, today, earnings, hist_iv, target=None, own=None, income=False):
     target = cfg.delta if target is None else target
     exps = []
     for e in api.expirations(sym):
@@ -604,7 +610,14 @@ def screen_symbol(api, sym, spot, cfg, today, earnings, hist_iv, target=None, ow
                   and r["oi"] >= cfg.min_oi)
         # Rank when we have enough history, otherwise fall back to IV vs realized.
         rich = (ivr >= cfg.ivr_min) if ivr is not None else (r["iv_rv"] is not None and r["iv_rv"] >= cfg.ivrv_min)
-        pays = r["roc"] >= cfg.min_roc
+        if income:   # steady name sold for regular income: IV richness is information only, lower hurdle
+            rich = True
+        pays = r["roc"] >= (cfg.income_min_roc if income else cfg.min_roc)
+        # Entry levels for managing the short put (per share, on the put's price)
+        r["income"] = income
+        r["buyback"] = r["mid"] * cfg.stop_mult                      # stop: close when the put costs this much
+        r["take_profit"] = r["mid"] * (1 - cfg.profit_take / 100)    # take profit: close at this price
+        r["tested_spot"] = r["strike"] * (1 + cfg.tested_pct / 100)  # stock this close to the strike = under pressure
         r["liquid"], r["rich"], r["pays"] = liquid, rich, pays
         r["passes"] = bool(liquid and rich and pays and not r["earnings"])
 
@@ -786,6 +799,14 @@ def main():
     ap.add_argument("--ivrv-min", type=float, default=1.2)
     ap.add_argument("--min-roc", type=float, default=25.0,
                     help="annualized ROC (%%) a put must pay to count as worth a look (default 25)")
+    ap.add_argument("--income-min-roc", type=float, default=15.0,
+                    help="annualized ROC (%%) hurdle for tickers tagged INCOME in the watchlist (default 15); they also skip the IV test")
+    ap.add_argument("--stop-mult", type=float, default=2.0,
+                    help="buy a short put back when it costs this multiple of the premium you took (default 2.0)")
+    ap.add_argument("--profit-take", type=float, default=50.0,
+                    help="take profit when this %% of the premium is captured (default 50)")
+    ap.add_argument("--tested-pct", type=float, default=2.0,
+                    help="treat a put as tested when the stock is within this %% above the strike (default 2)")
     ap.add_argument("--cc-delta", type=float, default=0.20,
                     help="max |delta| of the covered call, roughly the chance of being called away (0.20)")
     ap.add_argument("--cc-dte-min", type=int, default=5, help="skip covered-call expiries sooner than this (no dailies)")
@@ -843,6 +864,7 @@ def main():
     deltas = {s: v["delta"] for s, v in wl.items() if v["delta"]}
     owns = {s: v["own"] for s, v in wl.items() if v["own"]}
     costs = {s: v["cost"] for s, v in wl.items() if v["cost"]}
+    incomes = {s for s, v in wl.items() if v.get("income")}
     if not symbols:
         sys.exit("watchlist is empty")
     for n_ in wl_notes:
@@ -926,7 +948,7 @@ def main():
             target = deltas.get(sym, cfg.delta)
             ref_iv = rv = None
             if do_puts:
-                r, w, ref_iv, rv = screen_symbol(api, sym, spot, cfg, today, earnings, hist, target, owns.get(sym))
+                r, w, ref_iv, rv = screen_symbol(api, sym, spot, cfg, today, earnings, hist, target, owns.get(sym), sym in incomes)
                 if not r:
                     err.append(f"{sym}: no put at |delta| <= {target} in {cfg.dte_min}-{cfg.dte_max} DTE")
                 if sym in owns and not w:
@@ -989,6 +1011,8 @@ def main():
         "config": {"delta": cfg.delta, "dte_min": cfg.dte_min, "dte_max": cfg.dte_max, "min_oi": cfg.min_oi,
                    "max_spread": cfg.max_spread, "ivr_min": cfg.ivr_min, "ivrv_min": cfg.ivrv_min,
                    "min_history": cfg.min_history, "min_roc": cfg.min_roc, "custom_delta": deltas,
+                   "income": sorted(incomes), "income_min_roc": cfg.income_min_roc, "stop_mult": cfg.stop_mult,
+                   "profit_take": cfg.profit_take, "tested_pct": cfg.tested_pct,
                    "own_price": owns, "cost_basis": costs, "cc_delta": cfg.cc_delta,
                    "cc_dte_min": cfg.cc_dte_min, "cc_dte_max": cfg.cc_dte_max, "min_cc_yield": cfg.min_cc_yield,
                    "cc_max_spread_abs": cfg.cc_max_spread_abs},

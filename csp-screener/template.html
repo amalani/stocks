@@ -253,7 +253,7 @@ const pct = (v, d = 1) => v == null ? '–' : Number(v).toFixed(d) + '%';
 const incomeCols = [
   {k:'passes', label:'●', tip:'Worth a look: liquid, IV elevated, pays at least the ROC hurdle, no earnings before expiry. Hover a row\'s ● for its reason. Click to group these first.',
     ttip:r => reason(r), html:r => r.passes ? '<span class="dot">●</span>' : ''},
-  {k:'symbol', label:'Ticker', left:true, html:r => `<b>${esc(r.symbol)}</b>` + (custom(r) ? ` <span class="tag cust" title="Custom target delta from watchlist.txt">≤${num(tgt(r))}Δ</span>` : '')},
+  {k:'symbol', label:'Ticker', left:true, html:r => `<b>${esc(r.symbol)}</b>` + (custom(r) ? ` <span class="tag cust" title="Custom target delta from watchlist.txt">≤${num(tgt(r))}Δ</span>` : '') + (r.income ? ` <span class="tag cust" title="Income name: no IV test, ${C.income_min_roc}% hurdle">income</span>` : '')},
   {k:'spot', label:'Spot', html:r => num(r.spot)},
   {k:'expiry', label:'Expiry', html:r => `${r.expiry.slice(5)} <span class="mute">${r.dte}d</span>`},
   {k:'strike', label:'Strike', html:r => num(r.strike, r.strike % 1 ? 2 : 0)},
@@ -552,8 +552,8 @@ function reason(r) {
   if (!liq) return `Skip: thin market (spread ${pct(r.spread_pct)}, OI ${r.oi.toLocaleString()})`;
   if (!r.rich) return r.ivr != null ? `Weak: IV not elevated (IV Rank ${num(r.ivr, 0)}, needs ${C.ivr_min})`
                                     : `Weak: IV not elevated (IV is ${num(r.iv_rv)}× realized, needs ${C.ivrv_min}×)`;
-  if (r.pays === false) return `Thin: ${pct(r.roc, 0)} annualized is under your ${C.min_roc}% hurdle`;
-  const iv = r.ivr != null ? `IV Rank ${num(r.ivr, 0)}` : `IV ${num(r.iv_rv)}× realized`;
+  if (r.pays === false) return `Thin: ${pct(r.roc, 0)} annualized is under your ${r.income ? C.income_min_roc : C.min_roc}% hurdle${r.income ? ' (income)' : ''}`;
+  const iv = r.income ? `income name, IV ${num(r.iv_rv)}× realized (not required)` : r.ivr != null ? `IV Rank ${num(r.ivr, 0)}` : `IV ${num(r.iv_rv)}× realized`;
   return `Worth a look: pays ${pct(r.roc, 0)} annualized, ${iv}, ${pct(r.cushion_pct)} cushion${r.earn_known ? '' : ' (earnings unchecked)'}`;
 }
 
@@ -581,7 +581,7 @@ function wheelReason(r) {
 function checklist(r) {
   const cc = r.cost_basis != null;
   const liq = (cc ? ccTight(r) : r.spread_pct != null && r.spread_pct <= C.max_spread) && r.oi >= C.min_oi;
-  const wheel = r.own_price != null || r.cost_basis != null;   // IV richness is information only on these tabs
+  const wheel = r.own_price != null || r.cost_basis != null || r.income;   // IV richness is information only on these tabs and for income names
   const items = [
     {s: liq ? 'ok' : 'no', t: 'Liquid',
      d: `spread ${pct(r.spread_pct)}${cc && r.spread != null ? ' / $' + num(r.spread) : ''} (max ${C.max_spread}%${cc && C.cc_max_spread_abs != null ? ' or $' + C.cc_max_spread_abs.toFixed(2) : ''}) · open interest ${r.oi.toLocaleString()} (min ${C.min_oi})`},
@@ -589,7 +589,7 @@ function checklist(r) {
      d: r.ivr != null ? `IV Rank ${num(r.ivr, 0)} (needs ≥ ${C.ivr_min}), over ${r.ivr_n} days of history`
         : `IV/RV ${num(r.iv_rv)} (needs ≥ ${C.ivrv_min}). IV Rank starts after ${C.min_history} days of history (${r.ivr_n} so far)`}]),
     ...(r.pays == null ? [] : [{s: r.pays ? 'ok' : 'no', t: 'Pays enough',
-     d: `${pct(r.roc, 0)} annualized (hurdle ${r.cost_basis != null ? C.min_cc_yield : C.min_roc}%)`}]),
+     d: `${pct(r.roc, 0)} annualized (hurdle ${r.cost_basis != null ? C.min_cc_yield : r.income ? C.income_min_roc : C.min_roc}%${r.income ? ', income' : ''})`}]),
     ...(r.cost_basis == null ? [] : [{s: 'ok', t: 'Strike at or above cost basis',
      d: r.floored ? `raised from $${num(r.target_strike)} to $${num(r.strike)}: the ${num(r.target_delta)}Δ strike was under your $${num(r.cost_basis)} cost`
         : `$${num(r.strike)} is above your $${num(r.cost_basis)} cost, so a call-away is a gain`}]),
@@ -662,7 +662,7 @@ function takeHTML(r, ivs) {
   if (r.own_price == null) {
     return `Selling 1 contract collects about <b>$${(r.premium).toFixed(0)}</b> on <b>$${r.collateral.toLocaleString()}</b> collateral; break-even <b>$${num(r.strike - r.mid)}</b>.
         The strike is ${pct(r.cushion_pct)} below spot${r.em_mult != null ? `, ${num(r.em_mult)}× the 1σ expected move (${r.em_mult < 1 ? 'inside' : 'outside'} it)` : ''}.
-        ${hist}`;
+        ${hist}${r.buyback == null ? '' : `<br><b>Manage it:</b> take profit by buying back at <b>$${num(r.take_profit)}</b> (${C.profit_take}% captured); stop out if it reaches <b>$${num(r.buyback)}</b> (${C.stop_mult}× what you took, a loss of about $${((r.buyback - r.mid) * 100).toFixed(0)}); treat it as tested if the stock falls to about <b>$${num(r.tested_spot)}</b> (${C.tested_pct}% above the strike): roll for a net credit or close. A gap through the strike can skip these levels, so size the position for a bigger loss.`}`;
   }
   return `Selling 1 contract collects about <b>$${r.premium.toFixed(0)}</b> on <b>$${r.collateral.toLocaleString()}</b> collateral.
         If assigned you own 100 shares at a net <b>$${num(r.net_cost)}</b> (strike minus premium), <b>${pct(r.net_below_spot_pct)}</b> below today's $${num(r.spot)}.
@@ -711,6 +711,8 @@ function helpHTML() {
   </ol>
   <h4>Metrics</h4>
   <dl>
+    <dt>Income tag</dt><dd>A ticker marked INCOME in the watchlist (steady names you are happy to hold, sold for regular premium): the IV test is skipped and the hurdle is ${C.income_min_roc}% instead of ${C.min_roc}%. Liquidity and earnings still apply.</dd>
+    <dt>Manage it</dt><dd>Expand a row for the take-profit, stop (${C.stop_mult}× premium) and "tested" levels. These are conventions, not guarantees, and gaps can jump past them.</dd>
     <dt>● Worth a look</dt><dd>Spread ≤ ${C.max_spread}% and open interest ≥ ${C.min_oi}; IV Rank ≥ ${C.ivr_min} (or IV/RV ≥ ${C.ivrv_min} until ${C.min_history} days of history exist); ann. ROC ≥ ${C.min_roc != null ? C.min_roc + '%' : 'your hurdle'}; no earnings before expiry. A shortlist, not a recommendation.</dd>
     <dt>Why a row is not ●</dt><dd><b>Skip</b>: earnings before expiry, or a thin market. <b>Weak</b>: IV is not elevated, so premium is ordinary for this stock. <b>Thin</b>: the setup is fine but the payout is under your hurdle (change it with <code>--min-roc</code>).</dd>
     <dt>Ann. ROC</dt><dd>Premium (mid) ÷ strike, annualized by days to expiry, checked against your hurdle. Compare it across names with similar expiries: very short expiries (a few days) look inflated because a small credit is annualized over days.</dd>

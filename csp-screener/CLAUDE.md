@@ -56,6 +56,13 @@ payload JSON → `template.html`.
   among tickers with the same target; the page badges custom ones (`≤0.30Δ`). The `picks` history ("best ROC at ≤ target")
   mixes if a ticker's target is changed later; that is accepted.
 - `mid_iv` is a decimal (0.35). `norm_iv` tolerates percent-style values and treats 0 as missing.
+- Income profile: a watchlist ticker tagged `INCOME` (text: `GOOG 0.25 INCOME`; sheet: an Income/Style column with y/yes/x)
+  skips the IV-richness test (`rich` forced True) and uses `--income-min-roc` (15) instead of `--min-roc`. Liquidity and
+  earnings still apply. Delta stays per ticker (`0.25` allowed). Owner reasoning: premium must beat the 8-14% equity
+  range plus T-bills on collateral; the IV/RV 1.2 fallback is my own heuristic and rejects mega-caps.
+- Put rows carry management levels (`buyback` = mid × `--stop-mult` 2.0, `take_profit` = mid × (1 − `--profit-take` 50%),
+  `tested_spot` = strike × (1 + `--tested-pct` 2%)); shown under "Manage it" in the row take. Conventions, not guarantees:
+  gaps (SNDK -50%) skip them, so position size is the real protection. Older carried-over rows lack these fields.
 - IV Rank reference = ATM IV of the in-window expiry nearest 21 DTE, ranked against that ticker's own stored history.
   Tradier has no IV history, so rank shows "–" until `--min-history` (20) days exist; the ● pass test falls back to IV/RV.
 - History and `runs/<session>.{json,html}` are keyed by the *session* (trading day of the quotes' `trade_date`, fallback

@@ -11,6 +11,10 @@ finnhub.txt
 *.key
 *.pem
 
+# Downloaded copies of the position-tracker sheet (personal positions)
+*.xlsx
+*.xls
+
 # Claude Code local settings
 .claude/settings.local.json
 

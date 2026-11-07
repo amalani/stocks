@@ -5,7 +5,9 @@
 #   AMD 0.30 @480    MU @200
 # Optional cost basis of shares you hold, after $, for the Covered calls tab:
 #   AMD $465
+# INCOME marks steady names sold for regular premium: no IV-richness test, lower hurdle (--income-min-roc, 15):
+#   GOOG 0.25 INCOME
 # Or keep these in a Google Sheet and set WATCHLIST_URL in .env (see README); the sheet wins when reachable.
 AMZN
-COST
-MSFT
+COST INCOME
+MSFT INCOME
