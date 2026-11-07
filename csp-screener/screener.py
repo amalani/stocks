@@ -485,7 +485,7 @@ def cc_leg(chain, spot, dte, a_iv, cost, target):
         if o.get("option_type") != "call" or not o.get("bid"):
             continue
         d = (o.get("greeks") or {}).get("delta")
-        if d is None or not (0.02 <= abs(float(d)) <= 0.60) or float(o["strike"]) <= 0:
+        if d is None or not (0 < abs(float(d)) <= 0.60) or float(o["strike"]) <= 0:
             continue
         cands.append(_call_row(o, spot, dte, em, cost))
     cands.sort(key=lambda c: c["strike"])
