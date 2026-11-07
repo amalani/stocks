@@ -6,6 +6,8 @@ closest to (but not above) 0.20 delta in every weekly (Friday) expiration 1-39 D
 earnings metrics, stores daily IV history in SQLite, and renders a static page for a human to eyeball.
 Owner sells CSPs for premium and wants to avoid assignment; the page exists to spot where IV is rich.
 
+The reasoning behind the rules, thresholds, income tiers and put-management levels is in `STRATEGY.md`.
+
 Owner's trading rules the screener encodes (change via CLI flags, not by editing logic):
 - Delta ≤ 0.20, same week through ~3 weeks out. Mid price (not bid) is the premium input; limit orders.
 - Annualized ROC = mid / strike × 365 / DTE is the primary comparison metric.
