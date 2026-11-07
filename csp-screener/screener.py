@@ -840,6 +840,10 @@ def main():
                     help="refresh only these watchlist tickers (comma-separated; they keep their delta / own price / "
                          "cost basis from the watchlist). Everyone else is carried over from the session's last run. "
                          "Combine with --only. (--tickers is a different flag: it picks the watchlist FILE)")
+    ap.add_argument("--new", action="store_true",
+                    help="fetch only watchlist tickers that are not on the page yet (added since the last run); everyone "
+                         "else is carried over, tickers removed from the watchlist are dropped. Makes no API calls if "
+                         "nothing is new. Changed own price / cost basis / delta on an existing ticker needs --symbols")
     ap.add_argument("--workers", type=int, default=4,
                     help="tickers screened in parallel (default 4). Hides latency only: all threads share a limiter "
                          "capped at 100 Tradier calls/min (the quota is 120/min per token)")
@@ -871,6 +875,18 @@ def main():
         sys.exit(f"watchlist: {ex}")
     symbols = list(wl)
     all_symbols = list(symbols)
+    if cfg.new:
+        try:
+            last = json.loads((Path(cfg.out) / "latest.json").read_text())
+        except (OSError, ValueError):
+            last = {}
+        known = {r.get("symbol") for k in ("rows", "wheel", "cc") for r in last.get(k, [])}
+        known |= {e.split(":")[0] for e in last.get("errors", [])} | set(last.get("exch") or {})
+        fresh_new = [x for x in all_symbols if x not in known]
+        if not fresh_new:
+            sys.exit("--new: no tickers added since the last run; nothing fetched")
+        print(f"--new: fetching {', '.join(fresh_new)}", file=sys.stderr)
+        cfg.symbols = ",".join(fresh_new)
     if cfg.symbols:
         want = [x.strip().upper() for x in cfg.symbols.replace(" ", ",").split(",") if x.strip()]
         bad = [x for x in want if x not in wl]
@@ -935,12 +951,13 @@ def main():
             for k in ("puts", "cc"):
                 leg_times.setdefault(k, prev.get("generated_at"))
             fresh = set(symbols)   # a leg that runs replaces these tickers' rows; everything else is kept
-            keep = lambda lst, on: [r for r in (lst or []) if not (on and r.get("symbol") in fresh)]
+            gone = (lambda x: x not in all_symbols) if cfg.new else (lambda x: False)   # --new also drops removed tickers
+            keep = lambda lst, on: [r for r in (lst or []) if not (on and r.get("symbol") in fresh) and not gone(r.get("symbol"))]
             rows, wheel_rows = keep(prev.get("rows"), do_puts), keep(prev.get("wheel"), do_puts)
             cc_rows = keep(prev.get("cc"), do_cc)
             for e in prev.get("errors", []):
                 is_cc = "(covered calls)" in e
-                if not ((do_cc if is_cc else do_puts) and e.split(":")[0] in fresh):
+                if not ((do_cc if is_cc else do_puts) and e.split(":")[0] in fresh) and not gone(e.split(":")[0]):
                     errors.append(e)
     for k, on in (("puts", do_puts), ("cc", do_cc)):
         if on:

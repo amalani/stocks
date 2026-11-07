@@ -1,6 +1,6 @@
 {
-  "name": "CSP Screener",
-  "short_name": "CSP",
+  "name": "Stocks",
+  "short_name": "Stocks",
   "description": "Cash-secured put screener: short puts at or below 0.20 delta, with IV history.",
   "start_url": "./index.html",
   "scope": "./",

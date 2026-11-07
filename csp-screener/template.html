@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CSP Screener</title>
+<title>Stocks</title>
 <link rel="manifest" href="/*__ROOTPATH__*/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/*__ROOTPATH__*/apple-touch-icon.png">
 <meta name="theme-color" content="#14161a">
@@ -32,7 +32,7 @@
     color-scheme:dark;
 }
 :root[data-theme=light]{color-scheme:light}
-.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px}
 .tools{display:flex;gap:10px;align-items:flex-start}
 .helpbtn{margin-top:4px;padding:4px 10px;font-size:12px;font-weight:600}
 a.helpbtn{background:var(--panel);color:var(--mute);border:1px solid var(--line);border-radius:6px}
@@ -46,10 +46,11 @@ a.helpbtn:hover{background:var(--hover);color:var(--ink)}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
 main{max-width:1280px;margin:0 auto;padding:20px 16px 48px}
-h1{font-size:20px;margin:0 0 2px}
+h1{font-size:20px;margin:0}
 h3{font-size:13px;margin:0 0 6px;font-weight:600}
 .mute{color:var(--mute)}
-.meta{color:var(--mute);font-size:13px;margin-bottom:14px}
+.meta{color:var(--mute);font-size:13px;flex:1;min-width:0}
+.top{margin-bottom:14px}
 .navrow{display:flex;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap;margin:0 0 14px}
 .navrow .tabs{margin:0}
 .nav{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 0 auto}
@@ -180,12 +181,12 @@ details{margin-top:12px;font-size:13px}
 </head>
 <body>
 <main>
-  <div class="top"><h1>CSP Screener</h1>
+  <div class="top"><h1>Stocks</h1>
+    <div class="meta" id="meta"></div>
     <div class="tools">
       <a class="helpbtn" href="https://www.google.com/finance/#lists" target="_blank" rel="noopener" title="Your Google Finance lists" style="text-decoration:none;display:inline-block">GF ↗</a>
       <button id="helpbtn" class="helpbtn" title="Press ? at any time">? How to read this</button>
     </div></div>
-  <div class="meta" id="meta"></div>
   <div id="banners"></div>
   <div class="navrow"><div class="tabs" id="tabs"><button data-lens="income" class="on">Income · by delta</button><button data-lens="wheel" id="tab-wheel">Wheel · own price</button><button data-lens="cc" id="tab-cc">Covered calls · cost basis</button><button data-lens="prices">Prices</button><button data-lens="charts">Charts</button><button data-lens="market">Market</button></div>
   <div class="nav" id="nav" hidden></div></div>
@@ -289,6 +290,8 @@ const keyOf = r => r.symbol + '|' + r.expiry;
 
 // Two lenses over the same run: "income" (fixed delta per ticker) and "wheel" (strike at your own price).
 let lens = 'income';
+let metaHead = '', metaIncome = '', metaTail = '';
+const updateMeta = () => { $('#meta').textContent = metaHead + (lens === 'income' ? metaIncome : '') + metaTail; };
 const src = () => lens === 'wheel' ? (D.wheel || []) : lens === 'cc' ? (D.cc || []) : D.rows;
 const col = k => incomeCols.find(c => c.k === k);
 const wheelCols = [
@@ -483,7 +486,7 @@ function renderTop() {
         <div class="m"><b>$${num(r.strike, r.strike % 1 ? 2 : 0)} put</b> · ${r.expiry.slice(5)} (${r.dte}d) · Δ${num(r.delta)}<br>
         $${r.premium.toFixed(0)} on $${r.collateral.toLocaleString()} · ${pct(r.cushion_pct)} cushion<br>
         ${r.ivr != null ? 'IV Rank ' + num(r.ivr, 0) : 'IV ' + num(r.iv_rv) + '× realized'} · ${pct(r.spread_pct)} spread</div>`;
-  $('#top3').innerHTML = `<h2>${lens === 'cc' ? 'Top covered calls' : wheel ? 'Top wheel setups' : 'Top opportunities'} <span class="mute" style="font-weight:400">· best ● expiry per ticker, nearest ${PREF_DTE} days · click one for details</span></h2>` +
+  $('#top3').innerHTML = `<h2>${lens === 'cc' ? 'Top covered calls' : wheel ? 'Top wheel setups' : 'Top opportunities'}</h2>` +
     (picks.length ? `<div class="cards">${picks.map(r => `<button class="card ${selected === keyOf(r) ? 'sel' : ''}" data-key="${esc(keyOf(r))}">${card(r)}</button>`).join('')}</div>`
       : `<p class="mute" style="margin:0">${!src().length && howto() ? howto() : 'Nothing clears all the checks right now. That is a fine answer: the "Everything else" rows below say why each one fell short.'}</p>`);
 }
@@ -788,7 +791,7 @@ function switchLens(l) {
   ['#top3', '.bar', '.tablewrap.main', '#legend'].forEach(q => { document.querySelector(q).hidden = pr; });
   $('#prices').hidden = $('#live').hidden = l !== 'prices'; $('#charts').hidden = l !== 'charts'; $('#market').hidden = l !== 'market';
   if (pr) {
-    lens = l; selected = null; $('#hist').hidden = true;
+    lens = l; selected = null; $('#hist').hidden = true; updateMeta();
     document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.lens === l));
     if (l === 'prices') { tvMount('live', 'live'); renderPrices(); } else tvMount(l, l);
     return;
@@ -796,7 +799,7 @@ function switchLens(l) {
   lens = l; cols = l === 'wheel' ? wheelCols : l === 'cc' ? ccCols : incomeCols;
   sort = {k: 'passes', dir: -1}; selected = null; $('#hist').hidden = true;
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.lens === l));
-  fillExp(); setLegend(); render();
+  updateMeta(); fillExp(); setLegend(); render();
 }
 
 // ---- history navigation (manifest.js lists the saved sessions, newest first) ----
@@ -822,8 +825,7 @@ function buildNav(runs, sess) {
     groups[m].map(r => `<option value="${r.d}"${r.d === sess ? ' selected' : ''}>${fmtDay(r.d)} · ${r.n} rows · ${r.pass} ●${r.phase && r.phase !== 'close' ? ' · ' + (r.phase === 'off' ? 'off-hours' : r.phase) : ''}</option>`).join('') +
     '</optgroup>').join('');
   const nav = $('#nav');
-  nav.innerHTML = (i > 0 ? `<span class="mute">Viewing the snapshot from ${fmtDay(sess)}</span>` : '') +
-    (i === 0 && D.recorded !== false ? '' : `<a href="${ROOT}index.html">Latest</a>`) +
+  nav.innerHTML = (i === 0 && D.recorded !== false ? '' : `<a href="${ROOT}index.html">Latest</a>`) +
     `<button id="nv-old" ${navOlder ? '' : 'disabled'} title="Older run  ([)" aria-label="Older run">←</button>` +
     `<select id="nv-pick" aria-label="Saved run date">${i < 0 ? '<option selected>Unsaved preview</option>' : ''}${opts}</select>` +
     `<button id="nv-new" ${navNewer ? '' : 'disabled'} title="Newer run  (])" aria-label="Newer run">→</button>`;
@@ -853,7 +855,9 @@ function init() {
   const phaseNote = live ? (D.phase === 'intraday' ? ' (intraday)' : ' (off-hours)') : '';
   $('#meta').title = live ? (D.phase === 'intraday' ? 'Intraday snapshot: quotes are mid-session, and the close run replaces it.' : 'Taken outside market hours: quotes may be stale until a session run replaces it.') : '';
   const updatedLocal = () => D.generated_at ? new Date(D.generated_at).toLocaleString([], {month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit', timeZoneName:'short'}) : D.generated;
-  $('#meta').textContent = `Updated ${updatedLocal()}${phaseNote} · short put ≤ ${C.delta.toFixed(2)}Δ${nCustom ? ` (${nCustom} ticker${nCustom === 1 ? '' : 's'} custom)` : ''} · ${C.dte_min}–${C.dte_max} DTE${C.min_roc != null ? ` · hurdle ${C.min_roc}% ann.` : ''} · ${new Set(D.rows.map(r => r.symbol)).size} tickers${D.elapsed_s != null ? ` · ran in ${D.elapsed_s < 90 ? Math.round(D.elapsed_s) + 's' : (D.elapsed_s / 60).toFixed(1) + ' min'}${D.only ? ' (' + D.only + ' only)' : ''}` : ''}`;
+  metaHead = `Updated ${updatedLocal()}${phaseNote}`;
+  metaIncome = ` · short put ≤ ${C.delta.toFixed(2)}Δ${nCustom ? ` (${nCustom} ticker${nCustom === 1 ? '' : 's'} custom)` : ''} · ${C.dte_min}–${C.dte_max} DTE${C.min_roc != null ? ` · hurdle ${C.min_roc}% ann.` : ''}`;
+  metaTail = ` · ${new Set(D.rows.map(r => r.symbol)).size} tickers${D.elapsed_s != null ? ` · ran in ${D.elapsed_s < 90 ? Math.round(D.elapsed_s) + 's' : (D.elapsed_s / 60).toFixed(1) + ' min'}${D.only ? ' (' + D.only + ' only)' : ''}` : ''}`;
   (D.wheel || []).forEach(r => { r.spot_vs_own = r.own_price > 0 ? (r.spot / r.own_price - 1) * 100 : null; });
   const b = [], urgent = [], under = [], below = [];
   const ageH = D.generated_at ? (Date.now() - new Date(D.generated_at)) / 36e5 : null;
@@ -892,7 +896,8 @@ function init() {
   const nCost = Object.keys(C.cost_basis || {}).length;
   $('#tab-cc').textContent = 'Covered calls · cost basis' + (nCost ? ` (${nCost})` : '');
   $('#tabs').addEventListener('click', e => { const t = e.target.closest('button[data-lens]'); if (t && t.dataset.lens !== lens) switchLens(t.dataset.lens); });
-  if (D.watchlist && D.watchlist.source) $('#meta').textContent += ` · watchlist: ${D.watchlist.source}`;
+  if (D.watchlist && D.watchlist.source) metaTail += ` · watchlist: ${D.watchlist.source}`;
+  updateMeta();
   setLegend();
   loadNav(sess);
   if (D.errors.length) { $('#errs').hidden = false; $('#errlist').innerHTML = D.errors.map(e => `<li>${esc(e)}</li>`).join(''); }
