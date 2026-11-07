@@ -795,7 +795,7 @@ def main():
                          "published-sheet CSV set in .env")
     ap.add_argument("--delta", type=float, default=0.20, help="default max |delta| of the short put (0.20); override per ticker in watchlist.txt, e.g. 'AMD 0.30'")
     ap.add_argument("--dte-min", type=int, default=1)
-    ap.add_argument("--dte-max", type=int, default=25)
+    ap.add_argument("--dte-max", type=int, default=39)
     ap.add_argument("--expiries", choices=["weekly", "all"], default="weekly",
                     help="put expiries to screen: 'weekly' (default) = one per week, the Friday (Thursday if Friday is a "
                          "holiday), dropping daily / Mon-Wed series; 'all' = every listed expiry in the DTE window")

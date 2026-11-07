@@ -2,7 +2,7 @@
 
 ## What this is
 A daily/on-demand screener for cash-secured puts. For each ticker in `watchlist.txt` it finds the short put
-closest to (but not above) 0.20 delta in every weekly (Friday) expiration 1-25 DTE out (this week through ~3.5 weeks), computes premium / IV / liquidity /
+closest to (but not above) 0.20 delta in every weekly (Friday) expiration 1-39 DTE out (this week through ~5.5 weeks), computes premium / IV / liquidity /
 earnings metrics, stores daily IV history in SQLite, and renders a static page for a human to eyeball.
 Owner sells CSPs for premium and wants to avoid assignment; the page exists to spot where IV is rich.
 
