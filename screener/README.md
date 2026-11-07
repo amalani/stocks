@@ -74,7 +74,7 @@ python3 screener.py --rerender
 ```
 # crontab -e   (after the close; weekdays only)
 CRON_TZ=America/New_York
-30 16 * * 1-5  cd /path/to/csp-screener && python3 screener.py >> data/run.log 2>&1
+30 16 * * 1-5  cd /path/to/screener && python3 screener.py >> data/run.log 2>&1
 ```
 
 Serve `public/` from your home server (nginx/Caddy static dir, or `python3 -m http.server 8080 -d public`).
@@ -96,7 +96,7 @@ on the NAS; nginx never sees them.
    `http://<nas-ip>:9700` (or `http://web:80` if `cloudflared` is on the same compose network).
 4. **Put Cloudflare Access in front of it** (Access, Applications, Self-hosted, allow only your email). Otherwise
    anyone with the URL can see your watchlist and strikes.
-5. Schedule `cd /path/to/csp-screener && ./deploy.sh --run` in the NAS task scheduler: weekdays 1:30pm Pacific
+5. Schedule `cd /path/to/screener && ./deploy.sh --run` in the NAS task scheduler: weekdays 1:30pm Pacific
    (= 4:30pm ET; Pacific and Eastern are always 3 hours apart). Assumes the NAS clock is on Pacific time. It pulls the
    latest code first, then runs the screener; if the pull fails (diverged checkout) the screener does not run.
 6. On-demand refresh: run the same command over SSH. The page is static, so there is no refresh button.

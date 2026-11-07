@@ -915,7 +915,7 @@ def main():
         token = os.environ.get("TRADIER_TOKEN") or ((HERE / "token.txt").read_text().strip()
                                                     if (HERE / "token.txt").exists() else None)
         if not token:
-            sys.exit("No Tradier token: set TRADIER_TOKEN in csp-screener/.env (see .env.example)")
+            sys.exit("No Tradier token: set TRADIER_TOKEN in screener/.env (see .env.example)")
         api = Tradier(token, os.environ.get("TRADIER_BASE_URL", "https://api.tradier.com/v1"))
     do_puts, do_cc = cfg.only != "cc", cfg.only != "puts"
     if not do_puts:   # covered-call-only run: nothing to fetch for tickers without shares
