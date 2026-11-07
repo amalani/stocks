@@ -35,6 +35,8 @@
 .top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .tools{display:flex;gap:10px;align-items:flex-start}
 .helpbtn{margin-top:4px;padding:4px 10px;font-size:12px;font-weight:600}
+a.helpbtn{background:var(--panel);color:var(--mute);border:1px solid var(--line);border-radius:6px}
+a.helpbtn:hover{background:var(--hover);color:var(--ink)}
 .foot{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:24px}
 #csv{line-height:0;padding:6px 8px;color:var(--mute)}
 .theme{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
@@ -177,7 +179,7 @@ details{margin-top:12px;font-size:13px}
 <main>
   <div class="top"><h1>CSP Screener</h1>
     <div class="tools">
-      <a class="helpbtn" href="https://www.google.com/finance/#lists" target="_blank" rel="noopener" title="Your Google Finance lists" style="text-decoration:none;display:inline-block">Google Finance ↗</a>
+      <a class="helpbtn" href="https://www.google.com/finance/#lists" target="_blank" rel="noopener" title="Your Google Finance lists" style="text-decoration:none;display:inline-block">GF ↗</a>
       <button id="helpbtn" class="helpbtn" title="Press ? at any time">? How to read this</button>
     </div></div>
   <div class="meta" id="meta"></div>
@@ -187,7 +189,7 @@ details{margin-top:12px;font-size:13px}
   <div class="top3" id="top3"></div>
 
   <div class="bar">
-    <label>Ticker<input type="text" id="f-q" placeholder="e.g. AMD"></label>
+    <label>Ticker<select id="f-q"><option value="">All</option></select></label>
     <label>Expiry<select id="f-exp"><option value="">All</option></select></label>
     <label>Rows per ticker<select id="f-per">
       <option value="">All expiries</option>
@@ -430,7 +432,7 @@ function filtered() {
   const q = $('#f-q').value.trim().toUpperCase(), exp = $('#f-exp').value;
   const roc = parseFloat($('#f-roc').value) || 0, ivr = parseFloat($('#f-ivr').value) || 0;
   const rows = src().filter(r =>
-    (!q || r.symbol.includes(q)) && (!exp || r.expiry === exp) && r.roc >= roc &&
+    (!q || r.symbol === q) && (!exp || r.expiry === exp) && r.roc >= roc &&
     (!ivr || (r.ivr != null && r.ivr >= ivr)) &&
     (!$('#f-pass').checked || r.passes) && (!$('#f-earn').checked || !r.earnings) &&
     (!$('#f-liq').checked || r.liquid));
@@ -833,6 +835,9 @@ function buildNav(runs, sess) {
 }
 
 function fillExp() {
+  const q = $('#f-q'), qv = q.value;
+  q.innerHTML = '<option value="">All</option>' + [...new Set(src().map(r => r.symbol))].sort().map(t => `<option>${esc(t)}</option>`).join('');
+  q.value = qv;
   $('#f-exp').innerHTML = '<option value="">All</option>' + [...new Set(src().map(r => r.expiry))].sort().map(e => `<option>${e}</option>`).join('');
 }
 
