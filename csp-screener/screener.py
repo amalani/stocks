@@ -582,14 +582,24 @@ def screen_symbol(api, sym, spot, cfg, today, earnings, hist_iv, target=None, ow
             cands.append((abs(float(d)), o))
         if not cands:
             continue
-        delta, o = max(cands, key=lambda t: t[0])  # highest delta that is still <= target
+        def tradable(o):   # same bar as the liquidity check below: open interest and bid-ask spread
+            bd, ak = float(o["bid"]), float(o.get("ask") or 0)
+            md = (bd + ak) / 2 if ak else bd
+            return (int(o.get("open_interest") or 0) >= cfg.min_oi
+                    and ak > 0 and md > 0 and (ak - bd) / md * 100 <= cfg.max_spread)
+        # Highest delta still <= target, preferring strikes you could actually trade: odd strikes (172.5) often have no
+        # open interest, and the neighbours (170 / 175) are the real pick. If nothing is liquid keep the top one, flagged.
+        top = max(cands, key=lambda t: t[0])
+        liquid_c = [c for c in cands if tradable(c[1])]
+        delta, o = max(liquid_c, key=lambda t: t[0]) if liquid_c else top
+        skipped = float(top[1]["strike"]) if o is not top[1] else None
 
         bid, ask = float(o["bid"]), float(o.get("ask") or 0)
         mid = (bid + ask) / 2 if ask else bid
         K = float(o["strike"])
         em = spot * a_iv * math.sqrt(dte / 365) if a_iv else None
         rows.append(dict(
-            symbol=sym, spot=spot, expiry=e, dte=dte, strike=K, delta=delta, target_delta=target,
+            symbol=sym, spot=spot, expiry=e, dte=dte, strike=K, delta=delta, target_delta=target, skipped_strike=skipped,
             ladder=build_ladder(chain, spot, dte, a_iv, target),
             bid=bid, ask=ask, mid=mid,
             spread_pct=(ask - bid) / mid * 100 if ask and mid > 0 else None,

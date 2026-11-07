@@ -662,6 +662,7 @@ function takeHTML(r, ivs) {
   if (r.own_price == null) {
     return `Selling 1 contract collects about <b>$${(r.premium).toFixed(0)}</b> on <b>$${r.collateral.toLocaleString()}</b> collateral; break-even <b>$${num(r.strike - r.mid)}</b>.
         The strike is ${pct(r.cushion_pct)} below spot${r.em_mult != null ? `, ${num(r.em_mult)}× the 1σ expected move (${r.em_mult < 1 ? 'inside' : 'outside'} it)` : ''}.
+        ${r.skipped_strike != null ? `<br>The higher-delta $${num(r.skipped_strike, r.skipped_strike % 1 ? 2 : 0)} strike was skipped: it is too thinly traded (open interest or spread), so this is the next strike down that trades.` : ''}
         ${hist}${r.buyback == null ? '' : `<br><b>Manage it:</b> take profit by buying back at <b>$${num(r.take_profit)}</b> (${C.profit_take}% captured); stop out if it reaches <b>$${num(r.buyback)}</b> (${C.stop_mult}× what you took, a loss of about $${((r.buyback - r.mid) * 100).toFixed(0)}); treat it as tested if the stock falls to about <b>$${num(r.tested_spot)}</b> (${C.tested_pct}% above the strike): roll for a net credit or close. A gap through the strike can skip these levels, so size the position for a bigger loss.`}`;
   }
   return `Selling 1 contract collects about <b>$${r.premium.toFixed(0)}</b> on <b>$${r.collateral.toLocaleString()}</b> collateral.

@@ -61,6 +61,8 @@ payload JSON → `template.html`.
   skips the IV-richness test (`rich` forced True) and uses `--income-min-roc` (15) instead of `--min-roc`. Liquidity and
   earnings still apply. Delta stays per ticker (`0.25` allowed). Owner reasoning: premium must beat the 8-14% equity
   range plus T-bills on collateral; the IV/RV 1.2 fallback is my own heuristic and rejects mega-caps.
+- Pick = highest delta ≤ target among strikes that pass the liquidity bar (OI ≥ `--min-oi`, spread ≤ `--max-spread`); if none do, the top
+  one is kept and shows ✗ Liquid. `skipped_strike` records a higher-delta strike passed over (e.g. NVDA 172.5 with 0 OI → 170).
 - Put rows carry management levels (`buyback` = mid × `--stop-mult` 2.0, `take_profit` = mid × (1 − `--profit-take` 50%),
   `tested_spot` = strike × (1 + `--tested-pct` 2%)); shown under "Manage it" in the row take. Conventions, not guarantees:
   gaps (SNDK -50%) skip them, so position size is the real protection. Older carried-over rows lack these fields.
