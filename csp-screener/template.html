@@ -57,6 +57,9 @@ h3{font-size:13px;margin:0 0 6px;font-weight:600}
 .nav select{min-width:15ch;text-align:center;text-align-last:center;font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px}
 .nav a{color:var(--c0);font-size:13px}
 @media print{.nav{display:none}}
+.notices{margin:0 0 12px;font-size:13px;color:var(--mute)}
+.notices summary{cursor:pointer;padding:2px 0}
+.notices .note{background:var(--warnbg);color:var(--warn);padding:6px 12px;border-radius:6px;margin-top:6px}
 .banner{background:var(--warnbg);color:var(--warn);padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:13px}
 .tvgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
 .tvbox{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;min-height:60px}
@@ -849,19 +852,19 @@ function init() {
   const updatedLocal = () => D.generated_at ? new Date(D.generated_at).toLocaleString([], {month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit', timeZoneName:'short'}) : D.generated;
   $('#meta').textContent = `Updated ${updatedLocal()}${phaseNote} · short put ≤ ${C.delta.toFixed(2)}Δ${nCustom ? ` (${nCustom} ticker${nCustom === 1 ? '' : 's'} custom)` : ''} · ${C.dte_min}–${C.dte_max} DTE${C.min_roc != null ? ` · hurdle ${C.min_roc}% ann.` : ''} · ${new Set(D.rows.map(r => r.symbol)).size} tickers${D.elapsed_s != null ? ` · ran in ${D.elapsed_s < 90 ? Math.round(D.elapsed_s) + 's' : (D.elapsed_s / 60).toFixed(1) + ' min'}${D.only ? ' (' + D.only + ' only)' : ''}` : ''}`;
   (D.wheel || []).forEach(r => { r.spot_vs_own = r.own_price > 0 ? (r.spot / r.own_price - 1) * 100 : null; });
-  const b = [];
+  const b = [], urgent = [], under = [], below = [];
   const ageH = D.generated_at ? (Date.now() - new Date(D.generated_at)) / 36e5 : null;
   const weekend = [0, 6].includes(new Date().getDay());
   if (ROOT === '' && ageH != null && ageH > 26 && !(weekend && ageH < 80))
-    b.push(`This page is ${ageH < 48 ? Math.round(ageH) + ' hours' : Math.round(ageH / 24) + ' days'} old. Prices and strikes are from the last run, not today.`);
+    urgent.push(`This page is ${ageH < 48 ? Math.round(ageH) + ' hours' : Math.round(ageH / 24) + ' days'} old. Prices and strikes are from the last run, not today.`);
   const spots = {};
   (D.wheel || []).forEach(r => { spots[r.symbol] = r; });
-  Object.values(spots).filter(r => r.spot_vs_own != null && r.spot_vs_own <= 0).sort((a, b) => a.spot_vs_own - b.spot_vs_own).forEach(r =>
-    b.push(`${r.symbol} was $${num(r.spot)} at the last run, ${pct(-r.spot_vs_own)} below your $${num(r.own_price, r.own_price % 1 ? 2 : 0)} own price. Wheel strikes now follow spot, so revisit that price in the sheet.`));
+  Object.values(spots).filter(r => r.spot_vs_own != null && r.spot_vs_own <= 0).sort((a, b) => a.spot_vs_own - b.spot_vs_own).forEach(r => { below.push(r.symbol);
+    b.push(`${r.symbol} was $${num(r.spot)} at the last run, ${pct(-r.spot_vs_own)} below your $${num(r.own_price, r.own_price % 1 ? 2 : 0)} own price. Wheel strikes now follow spot, so revisit that price in the sheet.`); });
   const held = {};
   (D.cc || []).forEach(r => { held[r.symbol] = r; });
-  Object.values(held).filter(r => r.spot_vs_cost < 0).sort((a, b) => a.spot_vs_cost - b.spot_vs_cost).forEach(r =>
-    b.push(`${r.symbol} was $${num(r.spot)} at the last run, ${pct(-r.spot_vs_cost)} under your $${num(r.cost_basis, r.cost_basis % 1 ? 2 : 0)} cost basis. Covered calls stay at or above your cost, so their strikes sit further out and pay less.`));
+  Object.values(held).filter(r => r.spot_vs_cost < 0).sort((a, b) => a.spot_vs_cost - b.spot_vs_cost).forEach(r => { under.push(r.symbol);
+    b.push(`${r.symbol} was $${num(r.spot)} at the last run, ${pct(-r.spot_vs_cost)} under your $${num(r.cost_basis, r.cost_basis % 1 ? 2 : 0)} cost basis. Covered calls stay at or above your cost, so their strikes sit further out and pay less.`); });
   if (D.subset) b.push(`Partial refresh: only ${D.subset.join(', ')} updated at ${new Date(D.generated_at).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}; other tickers are from earlier runs this session.`);
   if (D.only && D.leg_times && D.leg_times.puts && D.leg_times.cc) {
     const fmt = x => new Date(x).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'});
@@ -872,7 +875,13 @@ function init() {
   const sess = D.session || D.generated.slice(0, 10);
   if (D.recorded === false) b.push(D.phase ? `Preview, not saved: the ${sess} session already has a better snapshot, or the market is closed. IV history was not updated.` : 'IV history was not updated for this run.');
   if (!D.earnings_source) b.push('No earnings source configured, so the Earnings column shows "?". Add a Finnhub key to enable it.');
-  $('#banners').innerHTML = b.map(t => `<div class="banner">${esc(t)}</div>`).join('');
+  // Only the stale-page warning stays always visible; routine notices fold into one expandable line.
+  const other = b.length - under.length - below.length;
+  const sum = [under.length ? `${under.length} under cost basis (${under.join(', ')})` : '',
+               below.length ? `${below.length} below own price (${below.join(', ')})` : '',
+               other ? `${other} other` : ''].filter(Boolean).join(' · ');
+  $('#banners').innerHTML = urgent.map(t => `<div class="banner">${esc(t)}</div>`).join('') +
+    (b.length ? `<details class="notices"><summary>${b.length} notice${b.length === 1 ? '' : 's'} · ${esc(sum)}</summary>${b.map(t => `<div class="note">${esc(t)}</div>`).join('')}</details>` : '');
   fillExp();
   $('#top3').addEventListener('click', e => { const c = e.target.closest('.card'); if (c) select(c.dataset.key); });
   const nOwn = Object.keys(C.own_price || {}).length;
