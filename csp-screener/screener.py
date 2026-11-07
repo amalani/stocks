@@ -543,11 +543,14 @@ def screen_cc(api, sym, spot, cfg, today, earnings, hist_iv, cost):
 
 def screen_symbol(api, sym, spot, cfg, today, earnings, hist_iv, target=None, own=None, income=False):
     target = cfg.delta if target is None else target
-    exps = []
-    for e in api.expirations(sym):
-        dte = (date.fromisoformat(e) - today).days
-        if cfg.dte_min <= dte <= cfg.dte_max:
-            exps.append((e, dte))
+    if cfg.expiries == "weekly":   # one per week (Friday), skips daily / Mon-Wed-only series
+        exps = cc_expiries(api.expirations(sym), today, cfg.dte_min, cfg.dte_max)
+    else:
+        exps = []
+        for e in api.expirations(sym):
+            dte = (date.fromisoformat(e) - today).days
+            if cfg.dte_min <= dte <= cfg.dte_max:
+                exps.append((e, dte))
     if not exps:
         return [], [], None, None
 
@@ -793,6 +796,9 @@ def main():
     ap.add_argument("--delta", type=float, default=0.20, help="default max |delta| of the short put (0.20); override per ticker in watchlist.txt, e.g. 'AMD 0.30'")
     ap.add_argument("--dte-min", type=int, default=1)
     ap.add_argument("--dte-max", type=int, default=25)
+    ap.add_argument("--expiries", choices=["weekly", "all"], default="weekly",
+                    help="put expiries to screen: 'weekly' (default) = one per week, the Friday (Thursday if Friday is a "
+                         "holiday), dropping daily / Mon-Wed series; 'all' = every listed expiry in the DTE window")
     ap.add_argument("--min-oi", type=int, default=100)
     ap.add_argument("--max-spread", type=float, default=10.0, help="max bid-ask spread as %% of mid")
     ap.add_argument("--ivr-min", type=float, default=50.0)

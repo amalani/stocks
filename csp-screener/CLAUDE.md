@@ -2,7 +2,7 @@
 
 ## What this is
 A daily/on-demand screener for cash-secured puts. For each ticker in `watchlist.txt` it finds the short put
-closest to (but not above) 0.20 delta in every expiration 1-25 DTE out (this week through ~3.5 weeks), computes premium / IV / liquidity /
+closest to (but not above) 0.20 delta in every weekly (Friday) expiration 1-25 DTE out (this week through ~3.5 weeks), computes premium / IV / liquidity /
 earnings metrics, stores daily IV history in SQLite, and renders a static page for a human to eyeball.
 Owner sells CSPs for premium and wants to avoid assignment; the page exists to spot where IV is rich.
 
@@ -51,6 +51,7 @@ payload JSON → `template.html`.
 
 ## Gotchas / decisions (don't undo without reason)
 - Tradier returns a bare object, not a list, when there is one item; always go through `aslist()`.
+- Put expiries default to one per week (Friday, Thursday on holidays) via `cc_expiries`, to cut noise from daily / tri-weekly series; `--expiries all` restores every listed expiry. Mon/Wed-only weeks are skipped.
 - Put deltas are negative; rows store `abs(delta)`. Selection = highest |delta| still ≤ target.
 - Target delta is per ticker (`row.target_delta`, payload `config.custom_delta`). Rankings stay apples-to-apples only
   among tickers with the same target; the page badges custom ones (`≤0.30Δ`). The `picks` history ("best ROC at ≤ target")
