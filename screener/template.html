@@ -218,7 +218,6 @@ details{margin-top:12px;font-size:13px}
   <div class="tablewrap main"><table id="tbl"><thead></thead><tbody></tbody></table></div>
 
   <div id="live" hidden></div>
-  <div class="tablewrap" id="prices" hidden></div>
   <div id="charts" hidden></div>
   <div id="detail" hidden></div>
   <div class="tablewrap" id="finder" hidden></div>
@@ -393,7 +392,7 @@ const watchSyms = () => priceRows().map(r => r.sym);
 const TV_VIEWS = {
   live(el) {
     const syms = watchSyms();
-    el.insertAdjacentHTML('beforeend', '<p class="tvnote">Live quotes above are delayed (about 15 min) and come from TradingView, so they need internet. The table below is each run\'s stored price.</p>');
+    el.insertAdjacentHTML('beforeend', '<p class="tvnote">Quotes are delayed (about 15 min) and come from TradingView, so they need internet. Each run\'s stored prices, trends and the options Strategy Finder links are on the Finder tab.</p>');
     tvWidget(tvBox(el), 'market-quotes', {width: '100%', height: Math.min(900, 120 + syms.length * 44), showSymbolLogo: true, isTransparent: false,
       symbolsGroups: [{name: 'Watchlist', symbols: syms.map(s => ({name: tvSym(s), displayName: s}))}]});
   },
@@ -468,20 +467,15 @@ function finderUrl(sym) {
     price_range_min: 5, price_range_max: 20, price_range_type: 'percent'});
 }
 function renderFinder() {
-  $('#finder').innerHTML = '<table><thead><tr><th class="l">Ticker</th><th>Price</th><th class="l">TradingView options Strategy Finder</th></tr></thead><tbody>' +
-    priceRows().map(r => `<tr><td class="l"><b>${esc(r.sym)}</b></td><td class="strong">${r.last == null ? '–' : '$' + num(r.last)}</td>
-      <td class="l"><a href="${esc(finderUrl(r.sym))}" target="_blank" rel="noopener">Open ${esc(r.sym)} ↗</a></td></tr>`).join('') +
-    `</tbody></table><p class="tvnote" style="padding:0 12px">Expiries from today to ${FINDER_DAYS} days out; strikes 5–20% from the price. The dates are computed when you open the page. Needs internet and may ask you to sign in to TradingView.</p>`;
-}
-function renderPrices() {
   const chg = v => v == null ? '<td>–</td>' : `<td class="${v >= 0 ? 'good' : 'bad'}">${v >= 0 ? '+' : ''}${v.toFixed(1)}%</td>`;
   const rows = priceRows();
-  $('#prices').innerHTML = `<table><thead><tr><th class="l">Ticker</th><th>Price</th><th title="Change vs the previous stored session">Day</th><th title="Change since the first stored session">Since first</th><th title="Low – high over the stored sessions">Range</th><th class="nosort">Trend</th><th class="nosort l">Days</th></tr></thead><tbody>` +
+  $('#finder').innerHTML = `<table><thead><tr><th class="l">Ticker</th><th>Price</th><th title="Change vs the previous stored session">Day</th><th title="Change since the first stored session">Since first</th><th title="Low – high over the stored sessions">Range</th><th class="nosort">Trend</th><th class="nosort l">Days</th><th class="nosort l" title="TradingView options Strategy Finder: expiries from today to 45 days out, strikes 5–20% from the price">Strategy Finder</th></tr></thead><tbody>` +
     rows.map(r => `<tr><td class="l"><a href="${gfUrl(r.sym)}" target="_blank" rel="noopener" title="Open ${esc(r.sym)} on Google Finance"><b>${esc(r.sym)}</b></a></td>
       <td class="strong">${r.last == null ? '–' : '$' + num(r.last)}</td>${chg(r.day)}${chg(r.since)}
       <td>${r.lo == null || r.lo === r.hi ? '–' : '$' + num(r.lo) + ' – $' + num(r.hi)}</td><td>${priceSpark(r.h)}</td>
-      <td class="l mute">${r.h.length}${r.from ? ' since ' + r.from.slice(5) : ''}</td></tr>`).join('') + '</tbody></table>' +
-    `<p class="mute" style="margin:8px 0 0;font-size:12px">Prices are each run's last quote (one point per trading session), not live. The trend only covers the sessions the screener has stored.</p>`;
+      <td class="l mute">${r.h.length}${r.from ? ' since ' + r.from.slice(5) : ''}</td>
+      <td class="l"><a href="${esc(finderUrl(r.sym))}" target="_blank" rel="noopener">Find ↗</a></td></tr>`).join('') + '</tbody></table>' +
+    `<p class="mute" style="margin:8px 0 0;font-size:12px">Prices are each run's last quote (one point per trading session), not live. The trend only covers the sessions the screener has stored. Strategy Finder links open TradingView with expiries from today to ${FINDER_DAYS} days out and strikes 5–20% from the price (dates are set when you open the page); it needs internet and may ask you to sign in.</p>`;
 }
 
 const cmpArr = (a, b) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] > b[i] ? 1 : -1; return 0; };
@@ -804,7 +798,7 @@ function toggleHelp(force) {
 // ---- wiring -----------------------------------------------------------
 function csv() {
   if (MK.includes(lens) || lens === 'finder') {
-    if (lens !== 'prices') return;
+    if (lens !== 'finder') return;
     const body = ['symbol,price,day_pct,since_first_pct,low,high,days'].concat(priceRows().map(r => [r.sym, r.last, r.day, r.since, r.lo, r.hi, r.h.length].map(v => v == null ? '' : typeof v === 'number' ? +v.toFixed(4) : v).join(',')));
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([body.join('\n')], {type: 'text/csv'}));
@@ -850,11 +844,11 @@ function switchLens(l) {
   const fin = l === 'finder';
   ['#top3', '.bar', '.tablewrap.main', '#legend'].forEach(q => { document.querySelector(q).hidden = pr || fin; });
   $('#finder').hidden = !fin;
-  $('#prices').hidden = $('#live').hidden = l !== 'prices'; $('#charts').hidden = l !== 'charts'; $('#detail').hidden = l !== 'detail'; $('#market').hidden = l !== 'market';
+  $('#live').hidden = l !== 'prices'; $('#charts').hidden = l !== 'charts'; $('#detail').hidden = l !== 'detail'; $('#market').hidden = l !== 'market';
   if (pr) {
     lens = l; selected = null; $('#hist').hidden = true; updateMeta();
     document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.lens === (pr ? 'markets' : l)));
-    if (l === 'prices') { tvMount('live', 'live'); renderPrices(); } else tvMount(l, l);
+    if (l === 'prices') tvMount('live', 'live'); else tvMount(l, l);
     return;
   }
   if (fin) {
