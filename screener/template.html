@@ -62,7 +62,9 @@ h3{font-size:13px;margin:0 0 6px;font-weight:600}
 .notices summary{cursor:pointer;padding:2px 0}
 .notices .note{background:var(--warnbg);color:var(--warn);padding:6px 12px;border-radius:6px;margin-top:6px}
 .banner{background:var(--warnbg);color:var(--warn);padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:13px}
-.tvgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.tvgrid{display:grid;grid-template-columns:repeat(auto-fill,290px);gap:12px}
+.tvgrid .tvbox{width:290px}
+.tvgrid .tradingview-widget-copyright{font-size:11px;padding:0 8px 4px}
 .tvbox{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;min-height:60px}
 .tvbox h3{margin:0;padding:8px 12px 0;font-size:13px}
 .tvnote{color:var(--mute);font-size:12px;margin:8px 0 14px}
@@ -366,10 +368,10 @@ const tvLazy = (el, build) => {
   const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { io.disconnect(); build(); } }, {rootMargin: '400px 0px'});
   io.observe(el);
 };
-function tvWidget(el, name, cfg) {
+function tvWidget(el, name, cfg, credit) {
   tvLazy(el, () => {
     const box = document.createElement('div'); box.className = 'tradingview-widget-container';
-    box.innerHTML = '<div class="tradingview-widget-container__widget"></div>';
+    box.innerHTML = '<div class="tradingview-widget-container__widget"></div>' + (credit ? `<div class="tradingview-widget-copyright"><a href="${esc(credit.href)}" rel="noopener nofollow" target="_blank"><span class="blue-text">${esc(credit.text)}</span></a><span class="trademark">&nbsp;by TradingView</span></div>` : '');
     const sc = document.createElement('script');
     sc.src = `https://s3.tradingview.com/external-embedding/embed-widget-${name}.js`; sc.async = true;
     sc.text = JSON.stringify({colorTheme: tvDark() ? 'dark' : 'light', locale: 'en', ...cfg});
@@ -397,7 +399,8 @@ const TV_VIEWS = {
   },
   charts(el) {
     const grid = document.createElement('div'); grid.className = 'tvgrid'; el.appendChild(grid);
-    watchSyms().forEach(s => tvWidget(tvBox(grid, null, 200), 'symbol-info', {symbol: tvSym(s), width: '100%', isTransparent: false}));
+    watchSyms().forEach(s => tvWidget(tvBox(grid, null, 250), 'symbol-info', {symbol: tvSym(s), width: 290, height: 230, isTransparent: false},
+      {href: 'https://www.tradingview.com/symbols/' + tvSym(s).replace(':', '-') + '/', text: s + ' performance'}));
   },
   detail(el) {
     const ov = tvBox(el, 'Overview', 520);
