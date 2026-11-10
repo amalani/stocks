@@ -194,7 +194,7 @@ details{margin-top:12px;font-size:13px}
   <div id="banners"></div>
   <div class="navrow"><div class="tabs" id="tabs"><button data-lens="markets" id="tab-markets">Markets</button><button data-lens="income">Income · by delta</button><button data-lens="wheel" id="tab-wheel">Wheel · own price</button><button data-lens="cc" id="tab-cc">Covered calls · cost basis</button></div>
   <div class="nav" id="nav" hidden></div></div>
-  <div class="tabs subtabs" id="subtabs" hidden><button data-lens="prices">Prices</button><button data-lens="charts">Charts</button><button data-lens="market">Markets</button></div>
+  <div class="tabs subtabs" id="subtabs" hidden><button data-lens="market">Markets</button><button data-lens="prices">Prices</button><button data-lens="charts">Charts</button><button data-lens="detail">Detailed chart</button></div>
   <div class="top3" id="top3"></div>
 
   <div class="bar">
@@ -218,6 +218,7 @@ details{margin-top:12px;font-size:13px}
   <div id="live" hidden></div>
   <div class="tablewrap" id="prices" hidden></div>
   <div id="charts" hidden></div>
+  <div id="detail" hidden></div>
   <div id="market" hidden></div>
 
   <div class="panel" id="hist" hidden></div>
@@ -394,13 +395,14 @@ const TV_VIEWS = {
       symbolsGroups: [{name: 'Watchlist', symbols: syms.map(s => ({name: tvSym(s), displayName: s}))}]});
   },
   charts(el) {
-    const syms = watchSyms();
-    const ov = tvBox(el, 'Overview', 520); ov.style.marginBottom = '12px';
+    const grid = document.createElement('div'); grid.className = 'tvgrid'; el.appendChild(grid);
+    watchSyms().forEach(s => tvWidget(tvBox(grid, null, 200), 'symbol-info', {symbol: tvSym(s), width: '100%', isTransparent: false}));
+  },
+  detail(el) {
+    const ov = tvBox(el, 'Overview', 520);
     tvWidget(ov, 'symbol-overview', {width: '100%', height: 500, autosize: false, isTransparent: false, chartOnly: false, chartType: 'area', lineWidth: 2, lineType: 0,
       scalePosition: 'right', scaleMode: 'Normal', valuesTracking: '1', changeMode: 'price-and-percent', fontSize: '10', headerFontSize: 'medium',
-      symbols: syms.map(s => [s, tvSym(s) + '|1D']), dateRanges: ['1d|1', '1m|30', '3m|60', '12m|1D', '60m|1W', 'all|1M']});
-    const grid = document.createElement('div'); grid.className = 'tvgrid'; el.appendChild(grid);
-    syms.forEach(s => tvWidget(tvBox(grid, null, 200), 'symbol-info', {symbol: tvSym(s), width: '100%', isTransparent: false}));
+      symbols: watchSyms().map(s => [s, tvSym(s) + '|1D']), dateRanges: ['1d|1', '1m|30', '3m|60', '12m|1D', '60m|1W', 'all|1M']});
   },
   market(el) {
     const top = document.createElement('div'); top.className = 'tvcols'; el.appendChild(top);
@@ -423,7 +425,7 @@ function tvMount(view, id) {
 }
 function tvTheme() {                       // widgets bake the theme in, so rebuild them when it changes
   Object.keys(tvDone).forEach(k => delete tvDone[k]);
-  const m = {prices: ['live', 'live'], charts: ['charts', 'charts'], market: ['market', 'market']}[lens];
+  const m = {prices: ['live', 'live'], charts: ['charts', 'charts'], detail: ['detail', 'detail'], market: ['market', 'market']}[lens];
   if (m) tvMount(m[0], m[1]);
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', tvTheme);
@@ -783,7 +785,7 @@ function toggleHelp(force) {
 
 // ---- wiring -----------------------------------------------------------
 function csv() {
-  if (lens === 'prices' || lens === 'charts' || lens === 'market') {
+  if (MK.includes(lens)) {
     if (lens !== 'prices') return;
     const body = ['symbol,price,day_pct,since_first_pct,low,high,days'].concat(priceRows().map(r => [r.sym, r.last, r.day, r.since, r.lo, r.hi, r.h.length].map(v => v == null ? '' : typeof v === 'number' ? +v.toFixed(4) : v).join(',')));
     const a = document.createElement('a');
@@ -816,18 +818,18 @@ function setLegend() {
     ` Hover a row's ● for its reason, or click the row to see which cells decided it. Press <b>?</b> (or the button at the top) for what each column means and what to look for.`;
 }
 
-let lastMarkets = 'prices';
-const MK = ['prices', 'charts', 'market'];
+let lastMarkets = 'market';
+const MK = ['market', 'prices', 'charts', 'detail'];
 function switchLens(l) {
   if (l === 'markets') l = lastMarkets;
   if (MK.includes(l)) lastMarkets = l;
   // the tab lives in the URL hash so a refresh (or run-to-run nav) stays on it
-  try { history.replaceState(null, '', l === 'prices' ? location.pathname + location.search : '#' + l); } catch (e) {}
+  try { history.replaceState(null, '', l === 'market' ? location.pathname + location.search : '#' + l); } catch (e) {}
   const pr = MK.includes(l);
   $('#subtabs').hidden = !pr;
   document.querySelectorAll('#subtabs button').forEach(b => b.classList.toggle('on', b.dataset.lens === l));
   ['#top3', '.bar', '.tablewrap.main', '#legend'].forEach(q => { document.querySelector(q).hidden = pr; });
-  $('#prices').hidden = $('#live').hidden = l !== 'prices'; $('#charts').hidden = l !== 'charts'; $('#market').hidden = l !== 'market';
+  $('#prices').hidden = $('#live').hidden = l !== 'prices'; $('#charts').hidden = l !== 'charts'; $('#detail').hidden = l !== 'detail'; $('#market').hidden = l !== 'market';
   if (pr) {
     lens = l; selected = null; $('#hist').hidden = true; updateMeta();
     document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.lens === (pr ? 'markets' : l)));
@@ -844,7 +846,7 @@ function switchLens(l) {
 let navOlder = null, navNewer = null;
 const fmtDay = d => new Date(d + 'T12:00:00').toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'});
 const fmtShort = d => new Date(d + 'T12:00:00').toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric'});
-const runHref = (runs, d) => ROOT + (d === runs[0].d ? 'index.html' : 'runs/' + d + '.html') + (lens === 'prices' ? '' : '#' + lens);
+const runHref = (runs, d) => ROOT + (d === runs[0].d ? 'index.html' : 'runs/' + d + '.html') + (lens === 'market' ? '' : '#' + lens);
 function loadNav(sess) {
   const s = document.createElement('script');
   s.src = ROOT + 'manifest.js';
@@ -961,7 +963,7 @@ function init() {
   $('#tbl tbody').addEventListener('click', e => { const tr = e.target.closest('tr[data-key]'); if (tr) select(tr.dataset.key); });
   render();
   const want = location.hash.slice(1);
-  switchLens(['income', 'wheel', 'cc', 'markets', ...MK].includes(want) ? want : 'prices');
+  switchLens(['income', 'wheel', 'cc', 'markets', ...MK].includes(want) ? want : 'market');
 }
 init();
 </script>
