@@ -68,6 +68,9 @@ h3{font-size:13px;margin:0 0 6px;font-weight:600}
 .tvbox{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;min-height:60px}
 .tvbox h3{margin:0;padding:8px 12px 0;font-size:13px}
 .tvnote{color:var(--mute);font-size:12px;margin:8px 0 14px}
+.finderwrap a{color:inherit;text-decoration:none}
+.finderwrap a:hover{text-decoration:underline}
+.finderwrap a.sf{color:var(--mute);font-size:12px;margin-left:4px}
 .tvcols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 @media (max-width:800px){.tvcols{grid-template-columns:1fr}}
 .tvgrid[hidden],.bar[hidden],#top3[hidden],#legend[hidden]{display:none}
@@ -154,6 +157,7 @@ svg .ln{fill:none;stroke-width:2;stroke-linejoin:round}
 .tabs button+button{border-left:1px solid var(--line)}
 .tabs button.on{background:var(--sel);color:var(--ink)}
 .subtabs{display:flex;width:max-content}
+.subtabs[hidden]{display:none}
 .subtabs button{font-weight:500;padding:5px 12px}
 .top3{margin:0 0 16px}
 .top3 h2{font-size:13px;margin:0 0 8px;font-weight:600}
@@ -220,7 +224,7 @@ details{margin-top:12px;font-size:13px}
   <div id="live" hidden></div>
   <div id="charts" hidden></div>
   <div id="detail" hidden></div>
-  <div class="tablewrap" id="finder" hidden></div>
+  <div class="tablewrap finderwrap" id="finder" hidden></div>
   <div id="market" hidden></div>
 
   <div class="panel" id="hist" hidden></div>
@@ -469,13 +473,13 @@ function finderUrl(sym) {
 function renderFinder() {
   const chg = v => v == null ? '<td>–</td>' : `<td class="${v >= 0 ? 'good' : 'bad'}">${v >= 0 ? '+' : ''}${v.toFixed(1)}%</td>`;
   const rows = priceRows();
-  $('#finder').innerHTML = `<table><thead><tr><th class="l">Ticker</th><th>Price</th><th title="Change vs the previous stored session">Day</th><th title="Change since the first stored session">Since first</th><th title="Low – high over the stored sessions">Range</th><th class="nosort">Trend</th><th class="nosort l">Days</th><th class="nosort l" title="TradingView options Strategy Finder: expiries from today to 45 days out, strikes 5–20% from the price">Strategy Finder</th></tr></thead><tbody>` +
-    rows.map(r => `<tr><td class="l"><a href="${gfUrl(r.sym)}" target="_blank" rel="noopener" title="Open ${esc(r.sym)} on Google Finance"><b>${esc(r.sym)}</b></a></td>
+  $('#finder').innerHTML = `<table><thead><tr><th class="l">Ticker</th><th>Price</th><th title="Change vs the previous stored session">Day</th><th title="Change since the first stored session">Since first</th><th title="Low – high over the stored sessions">Range</th><th class="nosort">Trend</th><th class="nosort l">Days</th></tr></thead><tbody>` +
+    rows.map(r => `<tr><td class="l"><a href="${gfUrl(r.sym)}" target="_blank" rel="noopener" title="Open ${esc(r.sym)} on Google Finance"><b>${esc(r.sym)}</b></a>
+        <a class="sf" href="${esc(finderUrl(r.sym))}" target="_blank" rel="noopener" title="TradingView options Strategy Finder: expiries from today to ${FINDER_DAYS} days out, strikes 5–20% from the price">(Strat Find)</a></td>
       <td class="strong">${r.last == null ? '–' : '$' + num(r.last)}</td>${chg(r.day)}${chg(r.since)}
       <td>${r.lo == null || r.lo === r.hi ? '–' : '$' + num(r.lo) + ' – $' + num(r.hi)}</td><td>${priceSpark(r.h)}</td>
-      <td class="l mute">${r.h.length}${r.from ? ' since ' + r.from.slice(5) : ''}</td>
-      <td class="l"><a href="${esc(finderUrl(r.sym))}" target="_blank" rel="noopener">Find ↗</a></td></tr>`).join('') + '</tbody></table>' +
-    `<p class="mute" style="margin:8px 0 0;font-size:12px">Prices are each run's last quote (one point per trading session), not live. The trend only covers the sessions the screener has stored. Strategy Finder links open TradingView with expiries from today to ${FINDER_DAYS} days out and strikes 5–20% from the price (dates are set when you open the page); it needs internet and may ask you to sign in.</p>`;
+      <td class="l mute">${r.h.length}${r.from ? ' since ' + r.from.slice(5) : ''}</td></tr>`).join('') + '</tbody></table>' +
+    `<p class="mute" style="margin:8px 0 0;font-size:12px">Prices are each run's last quote (one point per trading session), not live. The trend only covers the sessions the screener has stored. The (Strat Find) links open TradingView with expiries from today to ${FINDER_DAYS} days out and strikes 5–20% from the price (dates are set when you open the page); it needs internet and may ask you to sign in.</p>`;
 }
 
 const cmpArr = (a, b) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] > b[i] ? 1 : -1; return 0; };
