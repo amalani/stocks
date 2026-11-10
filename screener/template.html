@@ -827,6 +827,7 @@ function switchLens(l) {
   try { history.replaceState(null, '', l === 'market' ? location.pathname + location.search : '#' + l); } catch (e) {}
   const pr = MK.includes(l);
   $('#subtabs').hidden = !pr;
+  $('#errs').hidden = pr || !D.errors.length;   // skipped/errors belong to the screener tabs, not the market sub-tabs
   document.querySelectorAll('#subtabs button').forEach(b => b.classList.toggle('on', b.dataset.lens === l));
   ['#top3', '.bar', '.tablewrap.main', '#legend'].forEach(q => { document.querySelector(q).hidden = pr; });
   $('#prices').hidden = $('#live').hidden = l !== 'prices'; $('#charts').hidden = l !== 'charts'; $('#detail').hidden = l !== 'detail'; $('#market').hidden = l !== 'market';
