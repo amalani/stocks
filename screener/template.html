@@ -63,7 +63,8 @@ h3{font-size:13px;margin:0 0 6px;font-weight:600}
 .notices .note{background:var(--warnbg);color:var(--warn);padding:6px 12px;border-radius:6px;margin-top:6px}
 .banner{background:var(--warnbg);color:var(--warn);padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:13px}
 .tvgrid{display:grid;grid-template-columns:repeat(auto-fill,290px);gap:12px}
-.tvgrid .tvbox{width:290px}
+.tvgrid .tvbox{width:290px;height:230px}   /* parent clips the 500x230 widget on purpose */
+.tvgrid .tradingview-widget-container{width:500px!important;height:230px!important;overflow:hidden}
 .tvgrid .tradingview-widget-copyright{font-size:11px;padding:0 8px 4px}
 .tvbox{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;min-height:60px}
 .tvbox h3{margin:0;padding:8px 12px 0;font-size:13px}
@@ -402,7 +403,7 @@ const TV_VIEWS = {
   },
   charts(el) {
     const grid = document.createElement('div'); grid.className = 'tvgrid'; el.appendChild(grid);
-    watchSyms().forEach(s => tvWidget(tvBox(grid, null, 250), 'symbol-info', {symbol: tvSym(s), width: 290, height: 230, isTransparent: false},
+    watchSyms().forEach(s => tvWidget(tvBox(grid, null, 230), 'symbol-info', {symbol: tvSym(s), width: 500, height: 230, isTransparent: false},
       {href: 'https://www.tradingview.com/symbols/' + tvSym(s).replace(':', '-') + '/', text: s + ' performance'}));
   },
   detail(el) {
