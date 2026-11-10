@@ -192,7 +192,7 @@ details{margin-top:12px;font-size:13px}
       <button id="helpbtn" class="helpbtn" title="Press ? at any time">? How to read this</button>
     </div></div>
   <div id="banners"></div>
-  <div class="navrow"><div class="tabs" id="tabs"><button data-lens="markets" id="tab-markets">Markets</button><button data-lens="income">Income · by delta</button><button data-lens="wheel" id="tab-wheel">Wheel · own price</button><button data-lens="cc" id="tab-cc">Covered calls · cost basis</button></div>
+  <div class="navrow"><div class="tabs" id="tabs"><button data-lens="markets" id="tab-markets">Markets</button><button data-lens="income">Income · by delta</button><button data-lens="wheel" id="tab-wheel">Wheel · own price</button><button data-lens="cc" id="tab-cc">Covered calls · cost basis</button><button data-lens="finder">Finder</button></div>
   <div class="nav" id="nav" hidden></div></div>
   <div class="tabs subtabs" id="subtabs" hidden><button data-lens="market">Markets</button><button data-lens="prices">Prices</button><button data-lens="charts">Charts</button><button data-lens="detail">Detailed Chart</button></div>
   <div class="top3" id="top3"></div>
@@ -219,6 +219,7 @@ details{margin-top:12px;font-size:13px}
   <div class="tablewrap" id="prices" hidden></div>
   <div id="charts" hidden></div>
   <div id="detail" hidden></div>
+  <div class="tablewrap" id="finder" hidden></div>
   <div id="market" hidden></div>
 
   <div class="panel" id="hist" hidden></div>
@@ -454,6 +455,20 @@ function priceSpark(h) {
   const pts = vs.map((v, i) => `${(i / (vs.length - 1) * w).toFixed(1)},${(ht - 3 - (v - lo) / ((hi - lo) || 1) * (ht - 6)).toFixed(1)}`);
   const up = vs[vs.length - 1] >= vs[0], c = up ? 'var(--good)' : 'var(--bad)', e = pts[pts.length - 1].split(',');
   return `<svg width="${w}" height="${ht}" viewBox="0 0 ${w} ${ht}"><polyline points="${pts.join(' ')}" fill="none" stroke="${c}" stroke-width="1.5"/><circle cx="${e[0]}" cy="${e[1]}" r="2" fill="${c}"/></svg>`;
+}
+// ---- Finder tab: one TradingView options Strategy Finder link per ticker (expiries from today to +45 days, strikes 5-20% away) ----
+const FINDER_DAYS = 45;
+const ymd = d => d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+function finderUrl(sym) {
+  const t = new Date(), e = new Date(t.getFullYear(), t.getMonth(), t.getDate() + FINDER_DAYS);
+  return 'https://www.tradingview.com/options/strategy-finder/?' + new URLSearchParams({symbol: tvSym(sym), date_range_min: ymd(t), date_range_max: ymd(e),
+    price_range_min: 5, price_range_max: 20, price_range_type: 'percent'});
+}
+function renderFinder() {
+  $('#finder').innerHTML = '<table><thead><tr><th class="l">Ticker</th><th>Price</th><th class="l">TradingView options Strategy Finder</th></tr></thead><tbody>' +
+    priceRows().map(r => `<tr><td class="l"><b>${esc(r.sym)}</b></td><td class="strong">${r.last == null ? '–' : '$' + num(r.last)}</td>
+      <td class="l"><a href="${esc(finderUrl(r.sym))}" target="_blank" rel="noopener">Open ${esc(r.sym)} ↗</a></td></tr>`).join('') +
+    `</tbody></table><p class="tvnote" style="padding:0 12px">Expiries from today to ${FINDER_DAYS} days out; strikes 5–20% from the price. The dates are computed when you open the page. Needs internet and may ask you to sign in to TradingView.</p>`;
 }
 function renderPrices() {
   const chg = v => v == null ? '<td>–</td>' : `<td class="${v >= 0 ? 'good' : 'bad'}">${v >= 0 ? '+' : ''}${v.toFixed(1)}%</td>`;
@@ -785,7 +800,7 @@ function toggleHelp(force) {
 
 // ---- wiring -----------------------------------------------------------
 function csv() {
-  if (MK.includes(lens)) {
+  if (MK.includes(lens) || lens === 'finder') {
     if (lens !== 'prices') return;
     const body = ['symbol,price,day_pct,since_first_pct,low,high,days'].concat(priceRows().map(r => [r.sym, r.last, r.day, r.since, r.lo, r.hi, r.h.length].map(v => v == null ? '' : typeof v === 'number' ? +v.toFixed(4) : v).join(',')));
     const a = document.createElement('a');
@@ -829,12 +844,19 @@ function switchLens(l) {
   $('#subtabs').hidden = !pr;
   $('#errs').hidden = pr || !D.errors.length;   // skipped/errors belong to the screener tabs, not the market sub-tabs
   document.querySelectorAll('#subtabs button').forEach(b => b.classList.toggle('on', b.dataset.lens === l));
-  ['#top3', '.bar', '.tablewrap.main', '#legend'].forEach(q => { document.querySelector(q).hidden = pr; });
+  const fin = l === 'finder';
+  ['#top3', '.bar', '.tablewrap.main', '#legend'].forEach(q => { document.querySelector(q).hidden = pr || fin; });
+  $('#finder').hidden = !fin;
   $('#prices').hidden = $('#live').hidden = l !== 'prices'; $('#charts').hidden = l !== 'charts'; $('#detail').hidden = l !== 'detail'; $('#market').hidden = l !== 'market';
   if (pr) {
     lens = l; selected = null; $('#hist').hidden = true; updateMeta();
     document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.lens === (pr ? 'markets' : l)));
     if (l === 'prices') { tvMount('live', 'live'); renderPrices(); } else tvMount(l, l);
+    return;
+  }
+  if (fin) {
+    lens = l; selected = null; $('#hist').hidden = true; updateMeta(); renderFinder();
+    document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.lens === l));
     return;
   }
   lens = l; cols = l === 'wheel' ? wheelCols : l === 'cc' ? ccCols : incomeCols;
@@ -964,7 +986,7 @@ function init() {
   $('#tbl tbody').addEventListener('click', e => { const tr = e.target.closest('tr[data-key]'); if (tr) select(tr.dataset.key); });
   render();
   const want = location.hash.slice(1);
-  switchLens(['income', 'wheel', 'cc', 'markets', ...MK].includes(want) ? want : 'market');
+  switchLens(['income', 'wheel', 'cc', 'finder', 'markets', ...MK].includes(want) ? want : 'market');
 }
 init();
 </script>
