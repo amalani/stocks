@@ -475,11 +475,11 @@ function renderFinder() {
   const rows = priceRows();
   $('#finder').innerHTML = `<table><thead><tr><th class="l">Ticker</th><th>Price</th><th title="Change vs the previous stored session">Day</th><th title="Change since the first stored session">Since first</th><th title="Low – high over the stored sessions">Range</th><th class="nosort">Trend</th><th class="nosort l">Days</th></tr></thead><tbody>` +
     rows.map(r => `<tr><td class="l"><a href="${gfUrl(r.sym)}" target="_blank" rel="noopener" title="Open ${esc(r.sym)} on Google Finance"><b>${esc(r.sym)}</b></a>
-        <a class="sf" href="${esc(finderUrl(r.sym))}" target="_blank" rel="noopener" title="TradingView options Strategy Finder: expiries from today to ${FINDER_DAYS} days out, strikes 5–20% from the price">(Strat Find)</a></td>
+        <a class="sf" href="${esc(finderUrl(r.sym))}" target="_blank" rel="noopener" title="TradingView options Strategy Finder: expiries from today to ${FINDER_DAYS} days out, strikes 5–20% from the price">(Find)</a></td>
       <td class="strong">${r.last == null ? '–' : '$' + num(r.last)}</td>${chg(r.day)}${chg(r.since)}
       <td>${r.lo == null || r.lo === r.hi ? '–' : '$' + num(r.lo) + ' – $' + num(r.hi)}</td><td>${priceSpark(r.h)}</td>
       <td class="l mute">${r.h.length}${r.from ? ' since ' + r.from.slice(5) : ''}</td></tr>`).join('') + '</tbody></table>' +
-    `<p class="mute" style="margin:8px 0 0;font-size:12px">Prices are each run's last quote (one point per trading session), not live. The trend only covers the sessions the screener has stored. The (Strat Find) links open TradingView with expiries from today to ${FINDER_DAYS} days out and strikes 5–20% from the price (dates are set when you open the page); it needs internet and may ask you to sign in.</p>`;
+    `<p class="mute" style="margin:8px 0 0;font-size:12px">Prices are each run's last quote (one point per trading session), not live. The trend only covers the sessions the screener has stored. The (Find) links open TradingView with expiries from today to ${FINDER_DAYS} days out and strikes 5–20% from the price (dates are set when you open the page); it needs internet and may ask you to sign in.</p>`;
 }
 
 const cmpArr = (a, b) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] > b[i] ? 1 : -1; return 0; };
