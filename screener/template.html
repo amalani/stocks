@@ -413,7 +413,7 @@ const TV_VIEWS = {
   market(el) {
     const md = tvBox(el, 'Market data', 520); md.style.marginBottom = '12px';
     tvComp(md, 'tv-market-data', {'symbol-sectors': [
-      {sectionName: 'Indices', symbols: ['FOREXCOM:SPXUSD', 'FOREXCOM:NSXUSD', 'FOREXCOM:DJI', 'AMEX:IWM']},
+      {sectionName: 'Indices', symbols: ['FOREXCOM:SPXUSD', 'FOREXCOM:NSXUSD', 'FOREXCOM:DJI', 'AMEX:IWM', 'CBOE:VX1!']},
       {sectionName: 'Rates & dollar (ETFs)', symbols: ['NASDAQ:TLT', 'NASDAQ:IEF', 'AMEX:UUP']},
       {sectionName: 'Commodities', symbols: ['TVC:USOIL', 'CMCMARKETS:GOLD']}]});
     const h = tvBox(el, 'Stock heatmap (S&P 500, by sector)', 560);
