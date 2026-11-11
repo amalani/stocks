@@ -109,9 +109,11 @@ on the NAS; nginx never sees them.
    `http://<nas-ip>:9700` (or `http://web:80` if `cloudflared` is on the same compose network).
 4. **Put Cloudflare Access in front of it** (Access, Applications, Self-hosted, allow only your email). Otherwise
    anyone with the URL can see your watchlist and strikes.
-5. Schedule `cd /path/to/screener && ./deploy.sh --run` in the NAS task scheduler: weekdays 1:30pm Pacific
-   (= 4:30pm ET; Pacific and Eastern are always 3 hours apart). Assumes the NAS clock is on Pacific time. It pulls the
-   latest code first, then runs the screener; if the pull fails (diverged checkout) the screener does not run.
+5. Schedule **one** task in the NAS task scheduler running `cd /path/to/screener && ./run-scheduled.sh`: daily, first
+   run 6:00am (DSM's start time), repeat every 30 minutes, last run 1:45pm. The script itself only runs
+   `./deploy.sh --run` Mon-Fri every 30 min from 06:35 Pacific (6:35, 7:05, ... 1:35pm; it waits 5 min after each :00/:30 tick; computed in-script, so NAS
+   timezone/DST don't matter) and skips if the previous run is still going. `deploy.sh` pulls the latest code first, then runs the screener; if the pull
+   fails (diverged checkout) the screener does not run.
 6. On-demand refresh: run the same command over SSH. The page is static, so there is no refresh button.
 
 ### Updating the NAS after pushing changes
