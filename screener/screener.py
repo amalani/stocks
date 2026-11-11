@@ -877,6 +877,10 @@ def main():
     if cfg.out is None:
         cfg.out = str(HERE / ("public-mock" if cfg.mock else "public"))
 
+    mode = ("prune-runs" if cfg.prune_runs is not None else "manifest" if cfg.manifest
+            else f"rerender {cfg.rerender}" if cfg.rerender else None)
+    if mode:
+        print(f"screener {mode} started {datetime.now(ET).strftime('%Y-%m-%d %H:%M:%S %Z')}", file=sys.stderr)
     if cfg.prune_runs is not None:
         return prune_runs(Path(cfg.out), max(cfg.prune_runs, 1))
     if cfg.manifest:
@@ -887,6 +891,7 @@ def main():
 
     now = datetime.strptime(cfg.asof, "%Y-%m-%d %H:%M").replace(tzinfo=ET) if cfg.asof else datetime.now(ET)
     today = now.date()
+    print(f"screener started {now.strftime('%Y-%m-%d %H:%M:%S %Z')}{' (mock)' if cfg.mock else ''}", file=sys.stderr)
     # Watchlist: published Google Sheet CSV (WATCHLIST_URL) if set, else watchlist.txt (or --tickers FILE).
     # Per ticker: optional max put delta and optional "own price" (what you'd be happy to pay for the stock).
     try:
