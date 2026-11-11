@@ -782,10 +782,20 @@ def write_pwa(out):
         (out / f.name).write_bytes(data)
 
 
-def rerender(out):
+def prune_runs(out, keep):
+    """Delete all but the newest `keep` saved sessions (json + html), then rebuild manifest.js. DB untouched."""
+    runs = sorted((out / "runs").glob("????-??-??.json"), reverse=True)
+    for f in runs[keep:]:
+        f.unlink()
+        f.with_suffix(".html").unlink(missing_ok=True)
+    write_manifest(out)
+    print(f"pruned {max(len(runs) - keep, 0)} run(s), kept {min(len(runs), keep)}; manifest.js rebuilt", file=sys.stderr)
+
+
+def rerender(out, latest_only=False):
     n = 0
     write_pwa(out)
-    if (out / "runs").is_dir():
+    if (out / "runs").is_dir() and not latest_only:
         migrate_runs(out)
         for f in sorted((out / "runs").glob("*.json")):
             f.with_suffix(".html").write_text(render_page(json.loads(f.read_text()), "../"))
@@ -851,18 +861,29 @@ def main():
     ap.add_argument("--out", default=None, help="output dir (default public/, or public-mock/ with --mock)")
     ap.add_argument("--db", default=None)
     ap.add_argument("--mock", action="store_true")
-    ap.add_argument("--rerender", action="store_true",
+    ap.add_argument("--rerender", nargs="?", const="all", choices=["all", "latest"],
                     help="rebuild index.html and every runs/*.html from saved JSON with the current template "
                          "(no API calls, no DB writes); use after UX-only changes to template.html. Also folds "
-                         "old runs/YYYY-MM-DD_HHMM files into one snapshot per session and rebuilds manifest.js")
+                         "old runs/YYYY-MM-DD_HHMM files into one snapshot per session and rebuilds manifest.js. "
+                         "'--rerender latest' rebuilds only index.html (old pages keep the template they were saved with)")
+    ap.add_argument("--manifest", action="store_true",
+                    help="rebuild manifest.js only: run this after deleting old runs/ files by hand (no pages re-rendered)")
+    ap.add_argument("--prune-runs", type=int, default=None, metavar="N",
+                    help="keep only the newest N saved sessions (deletes older runs/*.json+html, rebuilds manifest.js; "
+                         "IV history in the DB is untouched)")
     ap.add_argument("--asof", default=None, metavar="'YYYY-MM-DD HH:MM'",
                     help="pretend the run happens at this ET time (testing the session/phase logic with --mock)")
     cfg = ap.parse_args()
     if cfg.out is None:
         cfg.out = str(HERE / ("public-mock" if cfg.mock else "public"))
 
+    if cfg.prune_runs is not None:
+        return prune_runs(Path(cfg.out), max(cfg.prune_runs, 1))
+    if cfg.manifest:
+        write_manifest(Path(cfg.out))
+        return print("manifest.js rebuilt", file=sys.stderr)
     if cfg.rerender:
-        return rerender(Path(cfg.out))
+        return rerender(Path(cfg.out), cfg.rerender == "latest")
 
     now = datetime.strptime(cfg.asof, "%Y-%m-%d %H:%M").replace(tzinfo=ET) if cfg.asof else datetime.now(ET)
     today = now.date()

@@ -55,7 +55,20 @@ h3{font-size:13px;margin:0 0 6px;font-weight:600}
 .navrow .tabs{margin:0}
 .nav{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 0 auto}
 .nav button:disabled{opacity:.4;cursor:default;background:var(--panel)}
-.nav select{min-width:15ch;text-align:center;text-align-last:center;font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px}
+.calwrap{position:relative}
+.cal{position:absolute;right:0;top:calc(100% + 6px);z-index:30;width:252px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px;box-shadow:0 6px 20px rgba(0,0,0,.18)}
+.calhd{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;font-weight:600;font-size:13px}
+.calhd button{padding:2px 9px}
+.calg{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center}
+.calg b{font-size:11px;color:var(--mute);font-weight:500}
+.cd{height:30px;border-radius:6px;font-size:13px;color:var(--mute);opacity:.45;position:relative;display:flex;align-items:center;justify-content:center;padding:0;border:1px solid transparent;background:none}
+.cd.on{opacity:1;color:var(--ink);background:var(--hover);cursor:pointer}
+.cd.on:hover{border-color:var(--c0)}
+.cd.sel{background:var(--sel);color:var(--c0);font-weight:600}
+.cd u{position:absolute;bottom:3px;width:5px;height:5px;border-radius:50%;background:var(--good)}
+.cd u.o{background:var(--warn)}
+.callg{display:flex;gap:12px;font-size:11px;color:var(--mute);margin-top:8px}
+.callg span:first-child{color:var(--good)}.callg .o{color:var(--warn)}
 .nav a{color:var(--c0);font-size:13px}
 @media print{.nav{display:none}}
 .notices{margin:0 0 12px;font-size:13px;color:var(--mute)}
@@ -878,28 +891,38 @@ function buildNav(runs, sess) {
   const go = r => { location.href = runHref(runs, r.d); };
   navOlder = runs[i + 1] || null;           // i = -1 (unsaved preview newer than every snapshot): older is runs[0]
   navNewer = i > 0 ? runs[i - 1] : null;
-  const groups = {};
-  runs.forEach(r => (groups[r.d.slice(0, 7)] = groups[r.d.slice(0, 7)] || []).push(r));
-  const opts = Object.keys(groups).map(m =>
-    `<optgroup label="${new Date(m + '-15T12:00:00').toLocaleDateString(undefined, {month: 'long', year: 'numeric'})}">` +
-    groups[m].map(r => `<option value="${r.d}"${r.d === sess ? ' selected' : ''}>${fmtDay(r.d)} · ${r.n} rows · ${r.pass} ●${r.phase && r.phase !== 'close' ? ' · ' + (r.phase === 'off' ? 'off-hours' : r.phase) : ''}</option>`).join('') +
-    '</optgroup>').join('');
+  const byDay = {}; runs.forEach(r => { byDay[r.d] = r; });
   const nav = $('#nav');
+  const label = i < 0 ? 'Unsaved preview' : fmtShort(sess);
   nav.innerHTML = (i === 0 && D.recorded !== false ? '' : `<a href="${ROOT}index.html">Latest</a>`) +
     `<button id="nv-old" ${navOlder ? '' : 'disabled'} title="Older run  ([)" aria-label="Older run">←</button>` +
-    `<select id="nv-pick" aria-label="Saved run date">${i < 0 ? '<option selected>Unsaved preview</option>' : ''}${opts}</select>` +
+    `<span class="calwrap"><button id="nv-pick" aria-haspopup="dialog" aria-expanded="false" aria-label="Pick a saved run date">${label} ▾</button><div class="cal" id="cal" hidden></div></span>` +
     `<button id="nv-new" ${navNewer ? '' : 'disabled'} title="Newer run  (])" aria-label="Newer run">→</button>`;
   nav.hidden = false;
   $('#nv-old').onclick = () => navOlder && go(navOlder);
   $('#nv-new').onclick = () => navNewer && go(navNewer);
-  // closed picker shows just the date; the open list shows the full detail
-  const pick = $('#nv-pick'), setText = long => [...pick.options].forEach(o => { if (o.dataset.s) o.textContent = long ? o.dataset.l : o.dataset.s; });
-  [...pick.options].forEach(o => { if (o.value && o.value !== 'Unsaved preview' && /^\d{4}-/.test(o.value)) { o.dataset.l = o.textContent; o.dataset.s = fmtShort(o.value); } });
-  setText(false);
-  pick.addEventListener('mousedown', () => setText(true));
-  pick.addEventListener('focus', () => setText(true));
-  pick.addEventListener('blur', () => setText(false));
-  pick.onchange = e => { setText(false); go({d: e.target.value}); };
+  const cal = $('#cal'), pick = $('#nv-pick');
+  let cy = +(i < 0 ? runs[0].d : sess).slice(0, 4), cm = +(i < 0 ? runs[0].d : sess).slice(5, 7) - 1;
+  const first = runs[runs.length - 1].d.slice(0, 7), last = runs[0].d.slice(0, 7);
+  const ym = () => cy + '-' + String(cm + 1).padStart(2, '0');
+  function drawCal() {
+    const lead = new Date(cy, cm, 1).getDay(), n = new Date(cy, cm + 1, 0).getDate();
+    let h = `<div class="calhd"><button id="cl-p" aria-label="Previous month" ${ym() <= first ? 'disabled' : ''}>‹</button><span>${new Date(cy, cm, 1).toLocaleDateString(undefined, {month: 'long', year: 'numeric'})}</span><button id="cl-n" aria-label="Next month" ${ym() >= last ? 'disabled' : ''}>›</button></div><div class="calg">` +
+      'SMTWTFS'.split('').map(x => `<b>${x}</b>`).join('') + '<i></i>'.repeat(lead);
+    for (let d = 1; d <= n; d++) {
+      const k = ym() + '-' + String(d).padStart(2, '0'), r = byDay[k];
+      const tip = r ? `${r.n} rows · ${r.pass} passing${r.phase && r.phase !== 'close' ? ' · ' + (r.phase === 'off' ? 'off-hours' : r.phase) : ''}` : 'No saved run';
+      h += r ? `<button class="cd on${k === sess ? ' sel' : ''}" data-d="${k}" title="${tip}">${d}${r.phase && r.phase !== 'close' ? '<u class="o"></u>' : '<u></u>'}</button>` : `<span class="cd" title="${tip}">${d}</span>`;
+    }
+    cal.innerHTML = h + '</div><div class="callg"><span>● close</span><span class="o">● intraday / off-hours</span></div>';
+    $('#cl-p').onclick = () => { if (--cm < 0) { cm = 11; cy--; } drawCal(); };
+    $('#cl-n').onclick = () => { if (++cm > 11) { cm = 0; cy++; } drawCal(); };
+    cal.querySelectorAll('.cd.on').forEach(b => { b.onclick = () => go({d: b.dataset.d}); });
+  }
+  const toggle = open => { cal.hidden = !open; pick.setAttribute('aria-expanded', open); if (open) drawCal(); };
+  pick.onclick = e => { e.stopPropagation(); toggle(cal.hidden); };
+  document.addEventListener('click', e => { if (!cal.hidden && !cal.contains(e.target)) toggle(false); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !cal.hidden) { toggle(false); pick.focus(); } });
 }
 
 function fillExp() {

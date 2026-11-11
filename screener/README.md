@@ -65,6 +65,19 @@ Every persisted run saves one snapshot per trading session, `public/runs/<sessio
 python3 screener.py --rerender
 ```
 
+To try a template change on the latest page only (old saved pages keep the template they were saved with):
+
+```
+python3 screener.py --rerender latest
+```
+
+Old runs can be removed without re-rendering anything, because pages read `manifest.js` when opened:
+
+```
+python3 screener.py --prune-runs 60   # keep newest 60 sessions (IV history in the DB is untouched)
+python3 screener.py --manifest        # after deleting runs/ files by hand
+```
+
 `--mock` writes to `public-mock/` (separate from `public/`), so it never touches the live page. Add `--mock` to
 `--rerender` to rebuild the mock pages. This only affects the machine you run it on; to update the NAS, use
 `./deploy.sh --rerender` there (see "Updating the NAS after pushing changes").
@@ -112,6 +125,7 @@ NAS serves. Run `deploy.sh` on the NAS (it does `git pull --ff-only`, `docker co
 ./deploy.sh --run-puts   # refresh only Income + Wheel (covered calls kept from the last run)
 ./deploy.sh --run-cc     # refresh only Covered calls (fast; only tickers with a cost basis are fetched)
 ./deploy.sh --rerender   # template.html-only change: rebuild every saved page from stored data (no API calls)
+./deploy.sh --rerender-latest   # same, but only index.html
 ```
 
 nginx serves `public/` straight from disk, so no web restart is needed; refresh the browser. The manual equivalent of

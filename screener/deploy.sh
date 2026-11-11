@@ -6,6 +6,7 @@
 #   ./deploy.sh --run-cc     same, but refresh only the Covered calls tab (fast: just tickers with shares)
 #   ./deploy.sh --rerender   same, then rebuild the saved pages from stored data (no API calls);
 #                            use after a template.html-only change
+#   ./deploy.sh --rerender-latest   same, but only index.html (old saved pages keep their old template)
 #
 # Why this is enough:
 #   - web (nginx) serves the bind-mounted public/, so new pages show up with no restart.
@@ -33,9 +34,13 @@ case "${1:-}" in
     docker compose run --rm screener sh -c \
       "pip install -q --disable-pip-version-check tzdata && python screener.py --rerender"
     ;;
+  --rerender-latest)
+    docker compose run --rm screener sh -c \
+      "pip install -q --disable-pip-version-check tzdata && python screener.py --rerender latest"
+    ;;
   "") ;;
   *)
-    echo "usage: $0 [--run | --run-puts | --run-cc | --rerender]" >&2
+    echo "usage: $0 [--run | --run-puts | --run-cc | --rerender | --rerender-latest]" >&2
     exit 2
     ;;
 esac
