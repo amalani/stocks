@@ -174,13 +174,12 @@ svg .ln{fill:none;stroke-width:2;stroke-linejoin:round}
 .tabs button{border:0;border-radius:0;padding:7px 14px;font-weight:600;color:var(--mute)}
 .tabs button+button{border-left:1px solid var(--line)}
 .tabs button.on{background:var(--sel);color:var(--ink)}
-#side{position:fixed;top:0;left:0;bottom:0;width:264px;background:var(--panel);border-right:1px solid var(--line);z-index:25;display:flex;flex-direction:column}
+#side{position:fixed;top:0;left:0;bottom:0;width:min(510px,100vw);background:var(--panel);border-right:1px solid var(--line);z-index:31;display:flex;flex-direction:column;box-shadow:10px 0 30px rgba(0,0,0,.2)}
 #side[hidden],#sidetab[hidden]{display:none}
 #side .sh{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;font-size:12px;font-weight:600;color:var(--mute);border-bottom:1px solid var(--line)}
 #side .sh button{padding:2px 8px}
 #sidebody{flex:1;overflow:auto}
 #sidetab{position:fixed;top:12px;left:0;z-index:25;padding:6px 8px;border-left:0;border-radius:0 6px 6px 0;font-size:12px;font-weight:600}
-@media (min-width:1100px){body.sideopen{padding-left:264px}}
 .subtabs{display:flex;width:max-content}
 .subtabs[hidden]{display:none}
 .subtabs button{font-weight:500;padding:5px 12px}
@@ -260,7 +259,7 @@ details{margin-top:12px;font-size:13px}
   <div class="foot"><div class="theme" id="theme"><button data-t="light" title="Light" aria-label="Light"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button><button data-t="system" title="System" aria-label="System"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></button><button data-t="dark" title="Dark" aria-label="Dark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button></div><span class="footinfo" id="footinfo"></span><button id="csv" title="Download CSV" aria-label="Download CSV"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg></button></div>
 </main>
 
-<aside id="side" aria-label="Live quotes" hidden><div class="sh"><span>Quotes</span><button id="sideclose" title="Collapse sidebar" aria-label="Collapse sidebar">◂</button></div><div id="sidebody"></div></aside>
+<aside id="side" aria-label="Live quotes" hidden><div class="sh"><span>Markets &amp; watchlist</span><button id="sideclose" title="Collapse sidebar" aria-label="Collapse sidebar">◂</button></div><div id="sidebody"></div></aside>
 <button id="sidetab" title="Show live quotes" aria-label="Show live quotes">Quotes ▸</button>
 <div id="scrim" hidden></div>
 <div id="notices" hidden><div class="box" role="dialog" aria-modal="true" aria-label="Notices"><h3>Notices <button id="noticex" aria-label="Close">✕</button></h3><div id="noticelist"></div></div></div>
@@ -452,9 +451,10 @@ const TV_VIEWS = {
     tvWidget(tvBox(el, null, 600), 'screener', {width: '100%', height: 600, defaultColumn: 'overview', defaultScreen: 'most_capitalized', market: 'america', showToolbar: true, isTransparent: false});
   },
   side(el) {
-    const syms = watchSyms();
-    tvWidget(el, 'market-quotes', {width: '100%', height: Math.max(400, window.innerHeight - 50), showSymbolLogo: false, isTransparent: false,
-      symbolsGroups: [{name: 'Watchlist', symbols: syms.map(s => ({name: tvSym(s), displayName: s}))}]});
+    el.style.height = '100%';
+    tvComp(el, 'tv-market-data', {'symbol-sectors': [
+      {sectionName: 'Indices', symbols: ['FOREXCOM:SPXUSD', 'FOREXCOM:NSXUSD', 'FOREXCOM:DJI', 'BMFBOVESPA:ISP1!', 'TVC:GOLD', 'TVC:USOIL', 'IG:NASDAQ', 'FX_IDC:USDINR']},
+      {sectionName: 'Stocks', symbols: watchSyms().map(tvSym)}]});
   },
   market(el) {
     const md = tvBox(el, 'Market data', 520); md.style.marginBottom = '12px';
@@ -482,7 +482,6 @@ function tvTheme() {                       // widgets bake the theme in, so rebu
 // Left sidebar with live quotes: collapsed by default, state remembered per device (localStorage).
 function sideSet(open, save) {
   $('#side').hidden = !open; $('#sidetab').hidden = open;
-  document.body.classList.toggle('sideopen', open);
   if (open) tvMount('side', 'sidebody');
   if (save) try { localStorage.setItem('sideOpen', open ? '1' : '0'); } catch (e) {}
 }
@@ -490,6 +489,7 @@ function sideInit() {
   let o = false; try { o = localStorage.getItem('sideOpen') === '1'; } catch (e) {}
   $('#sidetab').onclick = () => sideSet(true, true);
   $('#sideclose').onclick = () => sideSet(false, true);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#side').hidden) sideSet(false, true); });
   sideSet(o, false);
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', tvTheme);
