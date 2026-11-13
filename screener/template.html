@@ -222,7 +222,7 @@ details{margin-top:12px;font-size:13px}
       <button id="helpbtn" class="helpbtn" title="Press ? at any time">? How to read this</button>
     </div></div>
   <div id="banners"></div>
-  <div class="navrow"><div class="tabs" id="tabs"><button data-lens="markets" id="tab-markets">Markets</button><button data-lens="income">Income · by delta</button><button data-lens="wheel" id="tab-wheel">Wheel · own price</button><button data-lens="cc" id="tab-cc">Covered calls · cost basis</button><button data-lens="finder">Finder</button></div>
+  <div class="navrow"><div class="tabs" id="tabs"><button data-lens="finder">Finder</button><button data-lens="markets" id="tab-markets">Markets</button><button data-lens="income">Income · by delta</button><button data-lens="wheel" id="tab-wheel">Wheel · own price</button><button data-lens="cc" id="tab-cc">Covered calls · cost basis</button></div>
   <div class="nav" id="nav" hidden></div></div>
   <div class="tabs subtabs" id="subtabs" hidden><button data-lens="market">Markets</button><button data-lens="prices">Prices</button><button data-lens="charts">Charts</button><button data-lens="detail">Detailed Chart</button><button data-lens="screener">Screener</button></div>
   <div class="top3" id="top3"></div>
@@ -897,7 +897,7 @@ function switchLens(l) {
   if (l === 'markets') l = lastMarkets;
   if (MK.includes(l)) lastMarkets = l;
   // the tab lives in the URL hash so a refresh (or run-to-run nav) stays on it
-  try { history.replaceState(null, '', l === 'market' ? location.pathname + location.search : '#' + l); } catch (e) {}
+  try { history.replaceState(null, '', l === 'finder' ? location.pathname + location.search : '#' + l); } catch (e) {}
   const pr = MK.includes(l);
   $('#subtabs').hidden = !pr;
   $('#errs').hidden = pr || !D.errors.length;   // skipped/errors belong to the screener tabs, not the market sub-tabs
@@ -1060,7 +1060,7 @@ function init() {
   render();
   sideInit();
   const want = location.hash.slice(1);
-  switchLens(['income', 'wheel', 'cc', 'finder', 'markets', ...MK].includes(want) ? want : 'market');
+  switchLens(['income', 'wheel', 'cc', 'finder', 'markets', ...MK].includes(want) ? want : 'finder');
 }
 init();
 </script>
